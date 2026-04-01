@@ -21,7 +21,7 @@
 }
 
 .modern-card {
-  @apply bg-modern-card rounded-[24px] border border-modern-border shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-500;
+  @apply bg-modern-card rounded-none border border-modern-border shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-500;
 }
 
 .modern-card:hover {
@@ -29,11 +29,11 @@
 }
 
 .modern-button {
-  @apply bg-modern-primary text-white px-6 py-3 rounded-2xl font-semibold tracking-tight transition-all hover:shadow-lg hover:shadow-modern-primary/20 hover:-translate-y-0.5 active:scale-95 disabled:opacity-50;
+  @apply bg-modern-primary text-white px-6 py-3 rounded-none font-semibold tracking-tight transition-all hover:shadow-lg hover:shadow-modern-primary/20 hover:-translate-y-0.5 active:scale-95 disabled:opacity-50;
 }
 
 .modern-button-secondary {
-  @apply bg-white border border-modern-border text-modern-text px-6 py-3 rounded-2xl font-semibold tracking-tight transition-all hover:bg-slate-50 active:scale-95;
+  @apply bg-white border border-modern-border text-modern-text px-6 py-3 rounded-none font-semibold tracking-tight transition-all hover:bg-slate-50 active:scale-95;
 }
 
 .glass-header {
@@ -50,7 +50,7 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  @apply bg-slate-200 rounded-full;
+  @apply bg-slate-200 rounded-none;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
@@ -62,6 +62,6 @@
 }
 
 .kanban-column {
-  @apply bg-slate-100/50 rounded-[32px] p-4 flex flex-col min-h-0;
+  @apply bg-slate-100/50 rounded-none p-4 flex flex-col min-h-0;
 }
 
