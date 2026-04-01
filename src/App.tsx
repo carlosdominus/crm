@@ -252,6 +252,18 @@ export default function App() {
             })
           })).sort((a, b) => b.lastPurchaseTimestamp - a.lastPurchaseTimestamp);
 
+          // Auto-tag clients without phone as 'lixo'
+          const newTags = { ...clientTags };
+          let changed = false;
+          sortedClients.forEach(client => {
+            const key = (client.email || client.telefone || client.nome).toLowerCase().trim();
+            if (!client.telefone && !newTags[key]) {
+              newTags[key] = 'lixo';
+              changed = true;
+            }
+          });
+          if (changed) setClientTags(newTags);
+
           setClients(sortedClients);
           setLoading(false);
           setRefreshing(false);
@@ -597,18 +609,20 @@ export default function App() {
                         <td className="px-3 py-2 border-b border-r border-[#dadce0]">
                           <div className="flex items-center justify-between group/phone">
                             <p className="text-sm font-normal text-[#3c4043] flex items-center gap-2">
-                              <Phone size={12} className="text-[#5f6368]" /> {client.telefone}
+                              <Phone size={12} className="text-[#5f6368]" /> {client.telefone || <span className="text-rose-400 italic text-[10px]">Sem número</span>}
                             </p>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                copyToClipboard(client.telefone);
-                              }}
-                              className="opacity-0 group-hover/phone:opacity-100 p-1 hover:bg-gray-200 rounded-none transition-all text-[#5f6368]"
-                              title="Copiar telefone"
-                            >
-                              <Copy size={12} />
-                            </button>
+                            {client.telefone && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyToClipboard(client.telefone);
+                                }}
+                                className="opacity-0 group-hover/phone:opacity-100 p-1 hover:bg-gray-200 rounded-none transition-all text-[#5f6368]"
+                                title="Copiar telefone"
+                              >
+                                <Copy size={12} />
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className="px-3 py-2 border-b border-r border-[#dadce0]">
@@ -656,13 +670,15 @@ export default function App() {
                         </td>
                         <td className="px-3 py-2 border-b border-[#dadce0]">
                           <div className="flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
-                            <button 
-                              onClick={() => copyToClipboard(`${client.nome} - ${client.telefone}`)}
-                              className="w-6 h-6 rounded-none flex items-center justify-center transition-all border bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
-                              title="Copiar Nome + Tel"
-                            >
-                              <Copy size={12} />
-                            </button>
+                            {client.telefone && (
+                              <button 
+                                onClick={() => copyToClipboard(`${client.nome} - ${client.telefone}`)}
+                                className="w-6 h-6 rounded-none flex items-center justify-center transition-all border bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
+                                title="Copiar Nome + Tel"
+                              >
+                                <Copy size={12} />
+                              </button>
+                            )}
                             <button 
                               onClick={() => toggleTag(clientKey, 'pendente')}
                               className={cn(
