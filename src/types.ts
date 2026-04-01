@@ -13,6 +13,16 @@ export interface Lead {
   numericValue: number;
 }
 
+export interface ManualSale {
+  id: string;
+  clientKey: string;
+  productName: string;
+  value: number;
+  commission: number;
+  date: string;
+  timestamp: number;
+}
+
 export interface Client {
   email: string;
   nome: string;
@@ -22,7 +32,8 @@ export interface Client {
   lastPurchaseDate: string;
   lastPurchaseTimestamp: number;
   status: string; // Overall status (e.g., most recent)
-  tag?: 'entrar em contato' | 'contato enviado' | null;
+  tag?: 'pendente' | 'feito' | 'lixo' | null;
+  manualSales?: ManualSale[];
 }
 
 export const FUNNEL_STEPS = [

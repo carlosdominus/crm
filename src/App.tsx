@@ -19,17 +19,46 @@ import {
   Filter,
   ChevronDown,
   Phone,
-  Mail
+  Mail,
+  LayoutDashboard,
+  Plus,
+  TrendingUp,
+  DollarSign,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { parse, getTime, startOfDay, endOfDay, startOfWeek, startOfMonth, isWithinInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-import { Lead, Client, STATUS_THEMES } from './types';
+import { Lead, Client, STATUS_THEMES, ManualSale } from './types';
 import { cn } from './lib/utils';
 import { generatePersonalizedMessage } from './services/gemini';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  LineChart, 
+  Line,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1_rVWRk6_Knv5WLRONjC-wh_vFH6SymnTTFxbwqn-ehY/export?format=csv";
+
+const MANUAL_PRODUCTS = [
+  { name: "Protocolo Força Natural", type: 'front', commissionRate: 0.5 },
+  { name: "Diagnóstico Personalizado", type: 'upsell', commissionRate: 0.5 },
+  { name: "Bônus Especial", type: 'upsell', commissionRate: 0.5 },
+  { name: "Tônico do Cavalo", type: 'upsell', commissionRate: 0.5 },
+  { name: "Nutra Libid Turbo Caps", type: 'nutra', commissionRate: 0.25 },
+];
 
 export default function App() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -47,7 +76,25 @@ export default function App() {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem('crm_webhook_url') || "");
+  const [view, setView] = useState<'crm' | 'dashboard'>('crm');
   
+  // Manual Sales state
+  const [manualSales, setManualSales] = useState<ManualSale[]>(() => {
+    const saved = localStorage.getItem('crm_manual_sales');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [showAddSaleModal, setShowAddSaleModal] = useState(false);
+  const [saleForm, setSaleForm] = useState({
+    productIndex: 0,
+    value: "",
+    date: new Date().toISOString().split('T')[0]
+  });
+
+  useEffect(() => {
+    localStorage.setItem('crm_manual_sales', JSON.stringify(manualSales));
+  }, [manualSales]);
+
   // Filter states
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
@@ -106,6 +153,35 @@ export default function App() {
     const msg = await generatePersonalizedMessage(lead);
     setGeneratedMessage(msg);
     setGenerating(false);
+  };
+
+  const handleAddSale = () => {
+    if (!selectedClient || !saleForm.value) return;
+
+    const product = MANUAL_PRODUCTS[saleForm.productIndex];
+    const value = parseFloat(saleForm.value.replace(',', '.'));
+    const commission = value * product.commissionRate;
+    
+    const newSale: ManualSale = {
+      id: Math.random().toString(36).substr(2, 9),
+      clientKey: (selectedClient.email || selectedClient.telefone || selectedClient.nome).toLowerCase().trim(),
+      productName: product.name,
+      value,
+      commission,
+      date: saleForm.date,
+      timestamp: new Date(saleForm.date).getTime()
+    };
+
+    setManualSales(prev => [...prev, newSale]);
+    setShowAddSaleModal(false);
+    setSaleForm({
+      productIndex: 0,
+      value: "",
+      date: new Date().toISOString().split('T')[0]
+    });
+    
+    // Also update the tag to 'feito'
+    toggleTag(newSale.clientKey, 'feito');
   };
 
   const fetchData = async () => {
@@ -334,9 +410,27 @@ export default function App() {
     const totalClients = clients.length;
     const activeClients = clients.filter(c => c.leads.some(l => l.status === 'Aprovado')).length;
     const totalRevenue = clients.reduce((acc, curr) => acc + curr.totalSpent, 0);
+    
+    const manualRevenue = manualSales.reduce((acc, curr) => acc + curr.value, 0);
+    const totalCommission = manualSales.reduce((acc, curr) => acc + curr.commission, 0);
 
-    return { totalClients, activeClients, totalRevenue };
-  }, [clients]);
+    return { totalClients, activeClients, totalRevenue, manualRevenue, totalCommission };
+  }, [clients, manualSales]);
+
+  const dashboardData = useMemo(() => {
+    const dailyMap = new Map<string, { date: string; value: number; commission: number; count: number }>();
+    
+    manualSales.forEach(sale => {
+      const date = sale.date;
+      const existing = dailyMap.get(date) || { date, value: 0, commission: 0, count: 0 };
+      existing.value += sale.value;
+      existing.commission += sale.commission;
+      existing.count += 1;
+      dailyMap.set(date, existing);
+    });
+
+    return Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }, [manualSales]);
 
   const uniqueStatuses = useMemo(() => {
     const statuses = new Set(clients.map(c => c.status));
@@ -367,19 +461,37 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-6">
-            <div className="hidden md:flex gap-6">
+            <div className="hidden lg:flex gap-6">
               <div className="text-right">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary">Total Receita</p>
+                <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary">Minha Comissão</p>
+                <p className="text-sm font-bold text-emerald-600">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.totalCommission)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary">Vendas Manuais</p>
+                <p className="text-sm font-bold text-modern-text">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.manualRevenue)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary">Total Planilha</p>
                 <p className="text-sm font-bold text-modern-text">
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.totalRevenue)}
                 </p>
               </div>
-              <div className="text-right">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary">Total Clientes</p>
-                <p className="text-sm font-bold text-modern-text">{stats.totalClients}</p>
-              </div>
             </div>
             <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setView(view === 'crm' ? 'dashboard' : 'crm')}
+                className={cn(
+                  "w-10 h-10 border border-modern-border rounded-none flex items-center justify-center transition-all shadow-sm",
+                  view === 'dashboard' ? "bg-modern-primary text-white" : "bg-white text-modern-secondary hover:text-modern-primary"
+                )}
+                title={view === 'crm' ? "Ver Dashboard" : "Ver CRM"}
+              >
+                {view === 'crm' ? <LayoutDashboard size={18} /> : <Users size={18} />}
+              </button>
               <button 
                 onClick={() => setShowSettings(true)}
                 className="w-10 h-10 bg-white border border-modern-border rounded-none flex items-center justify-center text-modern-secondary hover:text-modern-primary transition-all shadow-sm"
@@ -397,9 +509,11 @@ export default function App() {
             </div>
           </div>
         </header>
-
-        {/* Search Bar & Filters */}
-        <div className="px-10 py-6 flex flex-wrap items-center gap-6 shrink-0">
+        
+        <div className="flex-1 overflow-hidden flex flex-col">
+          {view === 'crm' ? (
+            <>
+              <div className="px-10 py-6 flex flex-wrap items-center gap-6 shrink-0">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-modern-secondary" size={18} />
             <input 
@@ -725,7 +839,164 @@ export default function App() {
             </div>
           </div>
         </div>
-      </main>
+      </>
+    ) : (
+      <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
+          {/* Dashboard Header Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="bg-white border border-modern-border p-10 shadow-sm">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-emerald-100 flex items-center justify-center text-emerald-600">
+                  <TrendingUp size={24} />
+                </div>
+                <p className="text-[11px] font-extrabold uppercase tracking-widest text-modern-secondary">Minha Comissão Total</p>
+              </div>
+              <p className="text-4xl font-extrabold text-emerald-600">
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.totalCommission)}
+              </p>
+            </div>
+            
+            <div className="bg-white border border-modern-border p-10 shadow-sm">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-modern-primary/10 flex items-center justify-center text-modern-primary">
+                  <DollarSign size={24} />
+                </div>
+                <p className="text-[11px] font-extrabold uppercase tracking-widest text-modern-secondary">Vendas Manuais</p>
+              </div>
+              <p className="text-4xl font-extrabold text-modern-text">
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.manualRevenue)}
+              </p>
+            </div>
+
+            <div className="bg-white border border-modern-border p-10 shadow-sm">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-blue-100 flex items-center justify-center text-blue-600">
+                  <Package size={24} />
+                </div>
+                <p className="text-[11px] font-extrabold uppercase tracking-widest text-modern-secondary">Total de Vendas</p>
+              </div>
+              <p className="text-4xl font-extrabold text-modern-text">{manualSales.length}</p>
+            </div>
+
+            <div className="bg-white border border-modern-border p-10 shadow-sm">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-slate-100 flex items-center justify-center text-slate-600">
+                  <Users size={24} />
+                </div>
+                <p className="text-[11px] font-extrabold uppercase tracking-widest text-modern-secondary">Clientes Atendidos</p>
+              </div>
+              <p className="text-4xl font-extrabold text-modern-text">{new Set(manualSales.map(s => s.clientKey)).size}</p>
+            </div>
+          </div>
+
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <div className="bg-white border border-modern-border p-10 shadow-sm">
+              <h3 className="text-xs font-extrabold uppercase tracking-widest text-modern-text mb-10">Evolução de Comissão Diária</h3>
+              <div className="h-[350px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={dashboardData}>
+                    <defs>
+                      <linearGradient id="colorComm" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis 
+                      dataKey="date" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                      tickFormatter={(val) => new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                      tickFormatter={(val) => `R$ ${val}`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '0px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                      labelStyle={{ fontWeight: 800, fontSize: '13px', marginBottom: '6px' }}
+                    />
+                    <Area type="monotone" dataKey="commission" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#colorComm)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white border border-modern-border p-10 shadow-sm">
+              <h3 className="text-xs font-extrabold uppercase tracking-widest text-modern-text mb-10">Volume de Vendas Diário</h3>
+              <div className="h-[350px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dashboardData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis 
+                      dataKey="date" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                      tickFormatter={(val) => new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '0px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    />
+                    <Bar dataKey="count" fill="#3b82f6" radius={[0, 0, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Sales Table */}
+          <div className="bg-white border border-modern-border shadow-sm overflow-hidden">
+            <div className="p-8 border-b border-modern-border bg-slate-50/50 flex items-center justify-between">
+              <h3 className="text-xs font-extrabold uppercase tracking-widest text-modern-text">Histórico de Vendas Manuais</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-white border-b border-modern-border">
+                    <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest">Data</th>
+                    <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest">Produto</th>
+                    <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest">Valor</th>
+                    <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest text-right">Comissão</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-modern-border">
+                  {manualSales.sort((a, b) => b.timestamp - a.timestamp).map(sale => (
+                    <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-8 py-5 text-sm font-bold text-modern-text">{new Date(sale.date).toLocaleDateString('pt-BR')}</td>
+                      <td className="px-8 py-5 text-sm font-medium text-modern-text">{sale.productName}</td>
+                      <td className="px-8 py-5 text-sm font-bold text-modern-text">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
+                      </td>
+                      <td className="px-8 py-5 text-sm font-extrabold text-emerald-600 text-right">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.commission)}
+                      </td>
+                    </tr>
+                  ))}
+                  {manualSales.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-8 py-20 text-center text-sm font-bold text-modern-secondary uppercase tracking-widest">
+                        Nenhuma venda registrada ainda
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  </main>
 
       {/* Detail Panel - Modern Style */}
       <AnimatePresence>
@@ -764,6 +1035,52 @@ export default function App() {
                   <div className="flex flex-wrap gap-4 text-xs font-bold text-modern-secondary">
                     <p className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-none border border-modern-border"><Mail size={14} /> {selectedClient.email}</p>
                     <p className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-none border border-modern-border"><Phone size={14} /> {selectedClient.telefone}</p>
+                  </div>
+                </div>
+
+                {/* Manual Sales Section */}
+                <div className="mb-12 border-b border-modern-border pb-12">
+                  <div className="flex items-center justify-between mb-8">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-emerald-100 rounded-none flex items-center justify-center text-emerald-600">
+                        <DollarSign size={18} />
+                      </div>
+                      <h4 className="text-xs font-extrabold uppercase tracking-[0.15em] text-modern-text">Vendas Diretas (WhatsApp)</h4>
+                    </div>
+                    <button 
+                      onClick={() => setShowAddSaleModal(true)}
+                      className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 text-[11px] font-bold hover:bg-emerald-700 transition-all shadow-sm"
+                    >
+                      <Plus size={16} /> Registrar Venda
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {manualSales.filter(s => s.clientKey === (selectedClient.email || selectedClient.telefone || selectedClient.nome).toLowerCase().trim()).length > 0 ? (
+                      manualSales
+                        .filter(s => s.clientKey === (selectedClient.email || selectedClient.telefone || selectedClient.nome).toLowerCase().trim())
+                        .sort((a, b) => b.timestamp - a.timestamp)
+                        .map(sale => (
+                          <div key={sale.id} className="bg-slate-50 border border-modern-border p-5 flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-bold text-modern-text">{sale.productName}</p>
+                              <p className="text-[10px] font-bold text-modern-secondary uppercase tracking-wider">{new Date(sale.date).toLocaleDateString('pt-BR')}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-extrabold text-emerald-600">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
+                              </p>
+                              <p className="text-[9px] font-bold text-modern-secondary uppercase">
+                                Comissão: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.commission)}
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                    ) : (
+                      <div className="text-center py-10 bg-slate-50 border border-dashed border-modern-border">
+                        <p className="text-[11px] font-bold text-modern-secondary uppercase tracking-wider">Nenhuma venda manual registrada</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -927,6 +1244,98 @@ export default function App() {
                 >
                   <Save size={18} /> Salvar Configuração
                 </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+      {/* Add Sale Modal */}
+      <AnimatePresence>
+        {showAddSaleModal && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAddSaleModal(false)}
+              className="fixed inset-0 z-[60] bg-modern-text/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white shadow-2xl z-[70] p-8 rounded-none border border-modern-border"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-100 flex items-center justify-center text-emerald-600">
+                    <DollarSign size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-modern-text uppercase tracking-widest">Registrar Venda</h3>
+                    <p className="text-[10px] font-bold text-modern-secondary uppercase tracking-wider">{selectedClient?.nome}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowAddSaleModal(false)} className="text-modern-secondary hover:text-modern-text">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-modern-secondary">Produto Vendido</label>
+                  <select 
+                    value={saleForm.productIndex}
+                    onChange={(e) => setSaleForm({ ...saleForm, productIndex: parseInt(e.target.value) })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-modern-border rounded-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-modern-primary/20 transition-all"
+                  >
+                    {MANUAL_PRODUCTS.map((p, i) => (
+                      <option key={i} value={i}>{p.name} ({p.commissionRate * 100}%)</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-modern-secondary">Valor da Venda (R$)</label>
+                  <input 
+                    type="text" 
+                    value={saleForm.value}
+                    onChange={(e) => setSaleForm({ ...saleForm, value: e.target.value })}
+                    placeholder="Ex: 97,00"
+                    className="w-full px-4 py-3 bg-slate-50 border border-modern-border rounded-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-modern-primary/20 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-modern-secondary">Data da Venda</label>
+                  <input 
+                    type="date" 
+                    value={saleForm.date}
+                    onChange={(e) => setSaleForm({ ...saleForm, date: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-modern-border rounded-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-modern-primary/20 transition-all"
+                  />
+                </div>
+
+                <div className="pt-4">
+                  <div className="bg-emerald-50 p-4 border border-emerald-100 mb-6">
+                    <div className="flex justify-between items-center">
+                      <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Sua Comissão Estimada:</p>
+                      <p className="text-lg font-extrabold text-emerald-600">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                          (parseFloat(saleForm.value.replace(',', '.')) || 0) * MANUAL_PRODUCTS[saleForm.productIndex].commissionRate
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={handleAddSale}
+                    disabled={!saleForm.value}
+                    className="w-full bg-emerald-600 text-white py-4 font-bold text-sm hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <CheckCircle2 size={18} /> Confirmar Venda
+                  </button>
+                </div>
               </div>
             </motion.div>
           </>
