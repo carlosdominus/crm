@@ -474,15 +474,37 @@ export default function App() {
                             <div className="w-6 h-6 rounded bg-modern-primary/10 flex items-center justify-center text-modern-primary font-bold text-[10px] shrink-0">
                               {client.nome.charAt(0)}
                             </div>
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <p className="text-sm font-normal text-[#202124] truncate">{client.nome}</p>
                             </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(client.nome);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-all text-[#5f6368]"
+                              title="Copiar nome"
+                            >
+                              <Copy size={12} />
+                            </button>
                           </div>
                         </td>
                         <td className="px-3 py-2 border-b border-r border-[#dadce0]">
-                          <p className="text-sm font-normal text-[#3c4043] flex items-center gap-2">
-                            <Phone size={12} className="text-[#5f6368]" /> {client.telefone}
-                          </p>
+                          <div className="flex items-center justify-between group/phone">
+                            <p className="text-sm font-normal text-[#3c4043] flex items-center gap-2">
+                              <Phone size={12} className="text-[#5f6368]" /> {client.telefone}
+                            </p>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(client.telefone);
+                              }}
+                              className="opacity-0 group-hover/phone:opacity-100 p-1 hover:bg-gray-200 rounded transition-all text-[#5f6368]"
+                              title="Copiar telefone"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          </div>
                         </td>
                         <td className="px-3 py-2 border-b border-r border-[#dadce0]">
                           <p className="text-sm font-normal text-[#5f6368] truncate max-w-[180px]">
