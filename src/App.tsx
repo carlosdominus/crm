@@ -468,7 +468,7 @@ export default function App() {
               <Package size={20} />
             </div>
             <div className="flex items-center gap-4">
-              <h1 className="text-lg font-bold tracking-tight text-modern-text">CRM Planilha</h1>
+              <h1 className="text-lg font-bold tracking-tight text-modern-text">Dominus CRM</h1>
               <div className="h-4 w-px bg-modern-border" />
               <p className="text-xs font-semibold text-modern-secondary">Controle de Leads</p>
             </div>
