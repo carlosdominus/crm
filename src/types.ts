@@ -11,6 +11,7 @@ export interface Lead {
   hora: string;
   timestamp: number;
   numericValue: number;
+  paymentMethod?: string;
 }
 
 export interface ManualSale {

@@ -60,6 +60,17 @@ const MANUAL_PRODUCTS = [
   { name: "Nutra Libid Turbo Caps", type: 'nutra', commissionRate: 0.25 },
 ];
 
+const PAYMENT_METHODS: Record<string, string> = {
+  "0": "Nenhum",
+  "1": "Cartão de Crédito",
+  "2": "Boleto Bancário",
+  "3": "PayPal",
+  "4": "Cartão Recorrente",
+  "5": "Gratuito",
+  "6": "Cartão Upsell",
+  "7": "Pix"
+};
+
 export default function App() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -195,6 +206,8 @@ export default function App() {
         skipEmptyLines: true,
         transformHeader: (header) => header.trim().toLowerCase(),
         complete: (results) => {
+          const paymentMethodKey = results.meta.fields?.[11]; // Column L
+
           const rawLeads: Lead[] = results.data.map((row: any) => {
             const dateStr = row['data'] || '';
             const timeStr = row['hora'] || '';
@@ -272,7 +285,8 @@ export default function App() {
               data: dateStr,
               hora: timeStr,
               timestamp,
-              numericValue: isNaN(leadValue) ? 0 : leadValue
+              numericValue: isNaN(leadValue) ? 0 : leadValue,
+              paymentMethod: paymentMethodKey ? PAYMENT_METHODS[row[paymentMethodKey]?.toString()] || 'Desconhecido' : undefined
             };
           });
 
@@ -1105,13 +1119,20 @@ export default function App() {
                           </div>
                           <div className="text-right">
                             <p className="text-lg font-extrabold text-modern-primary mb-2">{lead.valor}</p>
-                            <span className={cn(
-                              "text-[9px] font-extrabold uppercase tracking-widest px-2 py-1 rounded-none shadow-sm",
-                              STATUS_THEMES[lead.status]?.bg || "bg-slate-100",
-                              STATUS_THEMES[lead.status]?.text || "text-slate-500"
-                            )}>
-                              {lead.status}
-                            </span>
+                            <div className="flex flex-col items-end gap-2">
+                              <span className={cn(
+                                "text-[9px] font-extrabold uppercase tracking-widest px-2 py-1 rounded-none shadow-sm",
+                                STATUS_THEMES[lead.status]?.bg || "bg-slate-100",
+                                STATUS_THEMES[lead.status]?.text || "text-slate-500"
+                              )}>
+                                {lead.status}
+                              </span>
+                              {lead.paymentMethod && (
+                                <span className="text-[8px] font-bold text-modern-secondary uppercase tracking-wider bg-white border border-modern-border px-2 py-0.5">
+                                  {lead.paymentMethod}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
