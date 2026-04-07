@@ -109,6 +109,7 @@ export default function App() {
   // Filter states
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
+  const [showOnlyManualSales, setShowOnlyManualSales] = useState(false);
   
   // Tagging state
   const [clientTags, setClientTags] = useState<Record<string, 'pendente' | 'feito' | 'lixo' | null>>(() => {
@@ -146,6 +147,7 @@ export default function App() {
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            type: 'tag_update',
             clientKey,
             tag: newTag || '',
             timestamp: new Date().toISOString()
@@ -175,7 +177,7 @@ export default function App() {
     
     const newSale: ManualSale = {
       id: Math.random().toString(36).substr(2, 9),
-      clientKey: (selectedClient.email || selectedClient.telefone || selectedClient.nome).toLowerCase().trim(),
+      clientKey: selectedClient.key,
       productName: product.name,
       value,
       commission,
@@ -191,8 +193,51 @@ export default function App() {
       date: new Date().toISOString().split('T')[0]
     });
     
+    // Sync sale to Google Sheets if webhook is configured
+    if (webhookUrl) {
+      try {
+        fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'sale_added',
+            sale: newSale,
+            clientKey: newSale.clientKey,
+            timestamp: new Date().toISOString()
+          })
+        });
+      } catch (error) {
+        console.error("Erro ao sincronizar venda com a planilha:", error);
+      }
+    }
+
     // Also update the tag to 'feito'
     toggleTag(newSale.clientKey, 'feito');
+  };
+
+  const handleDeleteSale = (saleId: string) => {
+    const saleToDelete = manualSales.find(s => s.id === saleId);
+    setManualSales(prev => prev.filter(s => s.id !== saleId));
+
+    // Sync deletion to Google Sheets if webhook is configured
+    if (webhookUrl && saleToDelete) {
+      try {
+        fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'sale_deleted',
+            saleId: saleId,
+            clientKey: saleToDelete.clientKey,
+            timestamp: new Date().toISOString()
+          })
+        });
+      } catch (error) {
+        console.error("Erro ao sincronizar exclusão de venda:", error);
+      }
+    }
   };
 
   const fetchData = async () => {
@@ -208,7 +253,7 @@ export default function App() {
         complete: (results) => {
           const paymentMethodKey = results.meta.fields?.[11]; // Column L
 
-          const rawLeads: Lead[] = results.data.map((row: any) => {
+          const rawLeads: Lead[] = results.data.map((row: any, index: number) => {
             const dateStr = row['data'] || '';
             const timeStr = row['hora'] || '';
             let timestamp = 0;
@@ -286,22 +331,41 @@ export default function App() {
               hora: timeStr,
               timestamp,
               numericValue: isNaN(leadValue) ? 0 : leadValue,
-              paymentMethod: paymentMethodKey ? PAYMENT_METHODS[row[paymentMethodKey]?.toString()] || 'Desconhecido' : undefined
+              paymentMethod: paymentMethodKey ? PAYMENT_METHODS[row[paymentMethodKey]?.toString()] || 'Desconhecido' : undefined,
+              rowNumber: index + 2
             };
           });
 
-          const clientMap = new Map<string, Client>();
+          const clientsList: Client[] = [];
+          const emailMap = new Map<string, Client>();
+          const phoneMap = new Map<string, Client>();
           
           rawLeads.forEach(lead => {
-            const key = (lead.email || lead.telefone || lead.nome).toLowerCase().trim();
-            if (!key) return;
-
-            const existing = clientMap.get(key);
-            const leadValue = lead.numericValue;
-            const isAprovado = lead.status === 'Aprovado';
+            const emailKey = lead.email?.toLowerCase().trim();
+            const phoneKey = lead.telefone?.trim();
+            
+            let existing: Client | undefined;
+            if (emailKey && emailMap.has(emailKey)) {
+              existing = emailMap.get(emailKey);
+            } else if (phoneKey && phoneMap.has(phoneKey)) {
+              existing = phoneMap.get(phoneKey);
+            }
 
             if (existing) {
               existing.leads.push(lead);
+              // Update with better data if available (prioritize phone for display)
+              if (!existing.telefone && lead.telefone) {
+                existing.telefone = lead.telefone;
+                phoneMap.set(lead.telefone.trim(), existing);
+              }
+              if (!existing.email && lead.email) {
+                existing.email = lead.email;
+                emailMap.set(lead.email.toLowerCase().trim(), existing);
+              }
+              if (existing.nome === 'Sem Nome' && lead.nome !== 'Sem Nome') existing.nome = lead.nome;
+              
+              const leadValue = lead.numericValue;
+              const isAprovado = lead.status === 'Aprovado';
               if (isAprovado) {
                 existing.totalSpent += leadValue;
                 existing.status = 'Aprovado';
@@ -310,26 +374,30 @@ export default function App() {
               if (lead.timestamp > existing.lastPurchaseTimestamp) {
                 existing.lastPurchaseDate = lead.data;
                 existing.lastPurchaseTimestamp = lead.timestamp;
-                // Only update status from a newer lead if we haven't found an 'Aprovado' one yet
                 if (existing.status !== 'Aprovado') {
                   existing.status = lead.status;
                 }
               }
             } else {
-              clientMap.set(key, {
+              const clientKey = (lead.email || lead.telefone || lead.nome).toLowerCase().trim();
+              const newClient: Client = {
                 email: lead.email,
                 nome: lead.nome,
                 telefone: lead.telefone,
+                key: clientKey,
                 leads: [lead],
-                totalSpent: isAprovado ? leadValue : 0,
+                totalSpent: lead.status === 'Aprovado' ? lead.numericValue : 0,
                 lastPurchaseDate: lead.data,
                 lastPurchaseTimestamp: lead.timestamp,
                 status: lead.status
-              });
+              };
+              clientsList.push(newClient);
+              if (emailKey) emailMap.set(emailKey, newClient);
+              if (phoneKey) phoneMap.set(phoneKey, newClient);
             }
           });
 
-          const sortedClients = Array.from(clientMap.values()).map(client => ({
+          const sortedClients = clientsList.map(client => ({
             ...client,
             leads: [...client.leads].sort((a, b) => {
               if (b.timestamp !== a.timestamp) {
@@ -393,8 +461,11 @@ export default function App() {
     }
 
     return clients.filter(client => {
-      const clientKey = client.email || client.telefone || client.nome;
+      const clientKey = client.key;
       const tag = clientTags[clientKey] || 'enviar msg';
+
+      const hasManualSales = manualSales.some(s => s.clientKey === clientKey);
+      if (showOnlyManualSales && !hasManualSales) return false;
 
       const matchesSearch = 
         client.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -471,6 +542,19 @@ export default function App() {
               <h1 className="text-lg font-bold tracking-tight text-modern-text">Dominus CRM</h1>
               <div className="h-4 w-px bg-modern-border" />
               <p className="text-xs font-semibold text-modern-secondary">Controle de Leads</p>
+            </div>
+            <div className="flex items-center gap-2 ml-4">
+              <button 
+                onClick={() => setShowOnlyManualSales(!showOnlyManualSales)}
+                className={cn(
+                  "px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider border transition-all",
+                  showOnlyManualSales 
+                    ? "bg-emerald-600 border-emerald-600 text-white" 
+                    : "bg-white border-modern-border text-modern-secondary hover:border-modern-primary"
+                )}
+              >
+                {showOnlyManualSales ? "Mostrando: Com Vendas" : "Filtrar: Com Vendas"}
+              </button>
             </div>
           </div>
           
@@ -681,14 +765,14 @@ export default function App() {
               <table className="w-full text-left border-separate border-spacing-0 bg-white">
                 <thead>
                   <tr className="bg-[#f8f9fa]">
-                    <th className="sticky top-0 z-10 px-2 py-2 text-[11px] font-medium text-[#5f6368] text-center border-b border-r border-[#dadce0] bg-[#f8f9fa] w-10">#</th>
+                    <th className="sticky top-0 z-10 px-2 py-2 text-[11px] font-medium text-[#5f6368] text-center border-b border-r border-[#dadce0] bg-[#f8f9fa] w-16">Linha</th>
+                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa] text-center">Ações</th>
                     <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Cliente</th>
                     <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">WhatsApp / Telefone</th>
                     <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">E-mail</th>
                     <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Data/Hora</th>
                     <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Status Atual</th>
-                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Total Investido</th>
-                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-[#dadce0] bg-[#f8f9fa] text-center">Ações</th>
+                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-[#dadce0] bg-[#f8f9fa]">Total Investido</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -699,7 +783,7 @@ export default function App() {
                       </tr>
                     ))
                   ) : filteredClients.map((client, idx) => {
-                    const clientKey = client.email || client.telefone || client.nome;
+                    const clientKey = client.key;
                     const currentTag = clientTags[clientKey];
                     const lastLead = client.leads[0]; // Leads are sorted by timestamp desc
 
@@ -712,7 +796,56 @@ export default function App() {
                         animate={{ opacity: 1 }}
                       >
                         <td className="px-2 py-2 border-b border-r border-[#dadce0] bg-[#f8f9fa] text-center text-[10px] text-[#5f6368] font-medium">
-                          {idx + 1}
+                          {lastLead?.rowNumber || '-'}
+                        </td>
+                        <td className="px-3 py-2 border-b border-r border-[#dadce0]">
+                          <div className="flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+                            {client.telefone && (
+                              <button 
+                                onClick={() => copyToClipboard(`${client.nome} - ${client.telefone}`)}
+                                className="w-6 h-6 rounded-none flex items-center justify-center transition-all border bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
+                                title="Copiar Nome + Tel"
+                              >
+                                <Copy size={12} />
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => toggleTag(clientKey, 'pendente')}
+                              className={cn(
+                                "w-6 h-6 rounded-none flex items-center justify-center transition-all border",
+                                currentTag === 'pendente' 
+                                  ? "bg-amber-100 border-amber-200 text-amber-600" 
+                                  : "bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
+                              )}
+                              title="Pendente (Aguardando Resposta)"
+                            >
+                              <Clock size={12} />
+                            </button>
+                            <button 
+                              onClick={() => toggleTag(clientKey, 'feito')}
+                              className={cn(
+                                "w-6 h-6 rounded-none flex items-center justify-center transition-all border",
+                                currentTag === 'feito' 
+                                  ? "bg-emerald-100 border-emerald-200 text-emerald-600" 
+                                  : "bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
+                              )}
+                              title="Feito (Vendido)"
+                            >
+                              <CheckCircle2 size={12} />
+                            </button>
+                            <button 
+                              onClick={() => toggleTag(clientKey, 'lixo')}
+                              className={cn(
+                                "w-6 h-6 rounded-none flex items-center justify-center transition-all border",
+                                currentTag === 'lixo' 
+                                  ? "bg-rose-100 border-rose-200 text-rose-600" 
+                                  : "bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
+                              )}
+                              title="Lixo (Número Inválido)"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         </td>
                         <td className="px-3 py-2 border-b border-r border-[#dadce0]">
                           <div className="flex items-center gap-2">
@@ -786,7 +919,7 @@ export default function App() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-2 border-b border-r border-[#dadce0]">
+                        <td className="px-3 py-2 border-b border-[#dadce0]">
                           <div className="flex flex-col">
                             <p className="text-sm font-semibold text-[#202124]">
                               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(client.totalSpent)}
@@ -794,55 +927,6 @@ export default function App() {
                             <p className="text-[9px] text-[#5f6368] font-medium">
                               {client.leads.length} {client.leads.length === 1 ? 'Lead' : 'Leads'}
                             </p>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 border-b border-[#dadce0]">
-                          <div className="flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
-                            {client.telefone && (
-                              <button 
-                                onClick={() => copyToClipboard(`${client.nome} - ${client.telefone}`)}
-                                className="w-6 h-6 rounded-none flex items-center justify-center transition-all border bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
-                                title="Copiar Nome + Tel"
-                              >
-                                <Copy size={12} />
-                              </button>
-                            )}
-                            <button 
-                              onClick={() => toggleTag(clientKey, 'pendente')}
-                              className={cn(
-                                "w-6 h-6 rounded-none flex items-center justify-center transition-all border",
-                                currentTag === 'pendente' 
-                                  ? "bg-amber-100 border-amber-200 text-amber-600" 
-                                  : "bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
-                              )}
-                              title="Pendente (Aguardando Resposta)"
-                            >
-                              <Clock size={12} />
-                            </button>
-                            <button 
-                              onClick={() => toggleTag(clientKey, 'feito')}
-                              className={cn(
-                                "w-6 h-6 rounded-none flex items-center justify-center transition-all border",
-                                currentTag === 'feito' 
-                                  ? "bg-emerald-100 border-emerald-200 text-emerald-600" 
-                                  : "bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
-                              )}
-                              title="Feito (Vendido)"
-                            >
-                              <CheckCircle2 size={12} />
-                            </button>
-                            <button 
-                              onClick={() => toggleTag(clientKey, 'lixo')}
-                              className={cn(
-                                "w-6 h-6 rounded-none flex items-center justify-center transition-all border",
-                                currentTag === 'lixo' 
-                                  ? "bg-rose-100 border-rose-200 text-rose-600" 
-                                  : "bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
-                              )}
-                              title="Lixo (Número Inválido)"
-                            >
-                              <Trash2 size={12} />
-                            </button>
                           </div>
                         </td>
                       </motion.tr>
@@ -1070,23 +1154,32 @@ export default function App() {
                   </div>
 
                   <div className="space-y-4">
-                    {manualSales.filter(s => s.clientKey === (selectedClient.email || selectedClient.telefone || selectedClient.nome).toLowerCase().trim()).length > 0 ? (
+                    {manualSales.filter(s => s.clientKey === selectedClient.key).length > 0 ? (
                       manualSales
-                        .filter(s => s.clientKey === (selectedClient.email || selectedClient.telefone || selectedClient.nome).toLowerCase().trim())
+                        .filter(s => s.clientKey === selectedClient.key)
                         .sort((a, b) => b.timestamp - a.timestamp)
                         .map(sale => (
-                          <div key={sale.id} className="bg-slate-50 border border-modern-border p-5 flex items-center justify-between">
+                          <div key={sale.id} className="bg-slate-50 border border-modern-border p-5 flex items-center justify-between group/sale">
                             <div>
                               <p className="text-sm font-bold text-modern-text">{sale.productName}</p>
                               <p className="text-[10px] font-bold text-modern-secondary uppercase tracking-wider">{new Date(sale.date).toLocaleDateString('pt-BR')}</p>
                             </div>
-                            <div className="text-right">
-                              <p className="text-sm font-extrabold text-emerald-600">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
-                              </p>
-                              <p className="text-[9px] font-bold text-modern-secondary uppercase">
-                                Comissão: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.commission)}
-                              </p>
+                            <div className="flex items-center gap-6">
+                              <div className="text-right">
+                                <p className="text-sm font-extrabold text-emerald-600">
+                                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
+                                </p>
+                                <p className="text-[9px] font-bold text-modern-secondary uppercase">
+                                  Comissão: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.commission)}
+                                </p>
+                              </div>
+                              <button 
+                                onClick={() => handleDeleteSale(sale.id)}
+                                className="opacity-0 group-hover/sale:opacity-100 p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                                title="Excluir Venda"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </div>
                           </div>
                         ))

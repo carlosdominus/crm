@@ -12,6 +12,7 @@ export interface Lead {
   timestamp: number;
   numericValue: number;
   paymentMethod?: string;
+  rowNumber?: number;
 }
 
 export interface ManualSale {
@@ -28,6 +29,7 @@ export interface Client {
   email: string;
   nome: string;
   telefone: string;
+  key: string;
   leads: Lead[];
   totalSpent: number;
   lastPurchaseDate: string;
