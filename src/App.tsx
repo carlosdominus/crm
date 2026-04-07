@@ -57,7 +57,7 @@ const MANUAL_PRODUCTS = [
   { name: "Diagnóstico Personalizado", type: 'upsell', commissionRate: 0.5 },
   { name: "Bônus Especial", type: 'upsell', commissionRate: 0.5 },
   { name: "Tônico do Cavalo", type: 'upsell', commissionRate: 0.5 },
-  { name: "Nutra Libid Turbo Caps", type: 'nutra', commissionRate: 0.25 },
+  { name: "Nutra Libid Turbo Caps", type: 'nutra', fixedCommission: 46.10 },
 ];
 
 const PAYMENT_METHODS: Record<string, string> = {
@@ -171,9 +171,9 @@ export default function App() {
   const handleAddSale = () => {
     if (!selectedClient || !saleForm.value) return;
 
-    const product = MANUAL_PRODUCTS[saleForm.productIndex];
+    const product = MANUAL_PRODUCTS[saleForm.productIndex] as any;
     const value = parseFloat(saleForm.value.replace(',', '.'));
-    const commission = value * product.commissionRate;
+    const commission = product.fixedCommission !== undefined ? product.fixedCommission : value * (product.commissionRate || 0);
     
     const newSale: ManualSale = {
       id: Math.random().toString(36).substr(2, 9),
@@ -1403,8 +1403,8 @@ export default function App() {
                     onChange={(e) => setSaleForm({ ...saleForm, productIndex: parseInt(e.target.value) })}
                     className="w-full px-4 py-3 bg-slate-50 border border-modern-border rounded-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-modern-primary/20 transition-all"
                   >
-                    {MANUAL_PRODUCTS.map((p, i) => (
-                      <option key={i} value={i}>{p.name} ({p.commissionRate * 100}%)</option>
+                    {MANUAL_PRODUCTS.map((p: any, i) => (
+                      <option key={i} value={i}>{p.name} ({p.fixedCommission !== undefined ? `R$ ${p.fixedCommission.toFixed(2)}` : `${(p.commissionRate || 0) * 100}%`})</option>
                     ))}
                   </select>
                 </div>
@@ -1436,7 +1436,11 @@ export default function App() {
                       <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Sua Comissão Estimada:</p>
                       <p className="text-lg font-extrabold text-emerald-600">
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                          (parseFloat(saleForm.value.replace(',', '.')) || 0) * MANUAL_PRODUCTS[saleForm.productIndex].commissionRate
+                          (() => {
+                            const p = MANUAL_PRODUCTS[saleForm.productIndex] as any;
+                            if (p.fixedCommission !== undefined) return p.fixedCommission;
+                            return (parseFloat(saleForm.value.replace(',', '.')) || 0) * (p.commissionRate || 0);
+                          })()
                         )}
                       </p>
                     </div>
