@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue, useRef } from 'react';
 import Papa from 'papaparse';
 import { 
   Settings,
@@ -76,6 +76,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [generatedMessage, setGeneratedMessage] = useState<string | null>(null);
@@ -88,6 +89,10 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem('crm_webhook_url') || "");
   const [view, setView] = useState<'crm' | 'dashboard'>('crm');
+  
+  // Pagination state
+  const [visibleCount, setVisibleCount] = useState(50);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
   
   // Manual Sales state
   const [manualSales, setManualSales] = useState<ManualSale[]>(() => {
@@ -167,6 +172,10 @@ export default function App() {
     setGeneratedMessage(msg);
     setGenerating(false);
   };
+
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [deferredSearchTerm, statusFilter, tagFilter, filterType]);
 
   const handleAddSale = () => {
     if (!selectedClient || !saleForm.value) return;
@@ -339,6 +348,8 @@ export default function App() {
           const clientsList: Client[] = [];
           const emailMap = new Map<string, Client>();
           const phoneMap = new Map<string, Client>();
+          const newTags = { ...clientTags };
+          let tagsChanged = false;
           
           rawLeads.forEach(lead => {
             const emailKey = lead.email?.toLowerCase().trim();
@@ -394,33 +405,26 @@ export default function App() {
               clientsList.push(newClient);
               if (emailKey) emailMap.set(emailKey, newClient);
               if (phoneKey) phoneMap.set(phoneKey, newClient);
+
+              // Auto-tag clients without phone as 'lixo'
+              if (!lead.telefone && !newTags[clientKey]) {
+                newTags[clientKey] = 'lixo';
+                tagsChanged = true;
+              }
             }
           });
 
           const sortedClients = clientsList.map(client => ({
             ...client,
-            leads: [...client.leads].sort((a, b) => {
-              if (b.timestamp !== a.timestamp) {
-                return b.timestamp - a.timestamp;
-              }
-              // If timestamps are equal, prioritize 'Aprovado'
+            leads: client.leads.sort((a, b) => {
+              if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
               if (b.status === 'Aprovado' && a.status !== 'Aprovado') return 1;
               if (a.status === 'Aprovado' && b.status !== 'Aprovado') return -1;
               return 0;
             })
           })).sort((a, b) => b.lastPurchaseTimestamp - a.lastPurchaseTimestamp);
 
-          // Auto-tag clients without phone as 'lixo'
-          const newTags = { ...clientTags };
-          let changed = false;
-          sortedClients.forEach(client => {
-            const key = (client.email || client.telefone || client.nome).toLowerCase().trim();
-            if (!client.telefone && !newTags[key]) {
-              newTags[key] = 'lixo';
-              changed = true;
-            }
-          });
-          if (changed) setClientTags(newTags);
+          if (tagsChanged) setClientTags(newTags);
 
           setClients(sortedClients);
           setLoading(false);
@@ -460,17 +464,18 @@ export default function App() {
       end = endOfDay(parse(customEndDate, 'yyyy-MM-dd', new Date()));
     }
 
+    const manualSalesKeys = new Set(manualSales.map(s => s.clientKey));
+
     return clients.filter(client => {
       const clientKey = client.key;
       const tag = clientTags[clientKey] || 'enviar msg';
 
-      const hasManualSales = manualSales.some(s => s.clientKey === clientKey);
-      if (showOnlyManualSales && !hasManualSales) return false;
+      if (showOnlyManualSales && !manualSalesKeys.has(clientKey)) return false;
 
       const matchesSearch = 
-        client.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        client.telefone.includes(searchTerm);
+        client.nome.toLowerCase().includes(deferredSearchTerm.toLowerCase()) ||
+        client.email.toLowerCase().includes(deferredSearchTerm.toLowerCase()) ||
+        client.telefone.includes(deferredSearchTerm);
       
       const matchesStatus = statusFilter === 'all' || client.status === statusFilter;
       const matchesTag = tagFilter === 'all' || tag === tagFilter;
@@ -489,7 +494,20 @@ export default function App() {
       
       return matchesSearch && matchesStatus && matchesTag && matchesDate;
     });
-  }, [clients, searchTerm, filterType, customStartDate, customEndDate, statusFilter, tagFilter, clientTags]);
+  }, [clients, deferredSearchTerm, filterType, customStartDate, customEndDate, statusFilter, tagFilter, clientTags, showOnlyManualSales, manualSales]);
+
+  const pagedClients = useMemo(() => {
+    return filteredClients.slice(0, visibleCount);
+  }, [filteredClients, visibleCount]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop <= clientHeight + 100) {
+      if (visibleCount < filteredClients.length) {
+        setVisibleCount(prev => prev + 50);
+      }
+    }
+  };
 
   const stats = useMemo(() => {
     const totalClients = clients.length;
@@ -761,18 +779,22 @@ export default function App() {
         {/* Spreadsheet Area */}
         <div className="flex-1 overflow-hidden px-10 pb-10 flex flex-col">
           <div className="bg-white rounded-none border border-modern-border shadow-sm overflow-hidden flex flex-col flex-1">
-            <div className="overflow-x-auto custom-scrollbar">
+            <div 
+              ref={tableContainerRef}
+              onScroll={handleScroll}
+              className="overflow-auto custom-scrollbar flex-1"
+            >
               <table className="w-full text-left border-separate border-spacing-0 bg-white">
                 <thead>
                   <tr className="bg-[#f8f9fa]">
-                    <th className="sticky top-0 z-10 px-2 py-2 text-[11px] font-medium text-[#5f6368] text-center border-b border-r border-[#dadce0] bg-[#f8f9fa] w-16">Linha</th>
-                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa] text-center">Ações</th>
-                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Cliente</th>
-                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">WhatsApp / Telefone</th>
-                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">E-mail</th>
-                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Data/Hora</th>
-                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Status Atual</th>
-                    <th className="sticky top-0 z-10 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-[#dadce0] bg-[#f8f9fa]">Total Investido</th>
+                    <th className="sticky top-0 z-20 px-2 py-2 text-[11px] font-medium text-[#5f6368] text-center border-b border-r border-[#dadce0] bg-[#f8f9fa] w-16">Linha</th>
+                    <th className="sticky top-0 z-20 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa] text-center">Ações</th>
+                    <th className="sticky top-0 z-20 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Cliente</th>
+                    <th className="sticky top-0 z-20 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">WhatsApp / Telefone</th>
+                    <th className="sticky top-0 z-20 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">E-mail</th>
+                    <th className="sticky top-0 z-20 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Data/Hora</th>
+                    <th className="sticky top-0 z-20 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-r border-[#dadce0] bg-[#f8f9fa]">Status Atual</th>
+                    <th className="sticky top-0 z-20 px-3 py-2 text-[11px] font-medium text-[#5f6368] uppercase tracking-wider border-b border-[#dadce0] bg-[#f8f9fa]">Total Investido</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -782,7 +804,7 @@ export default function App() {
                         <td colSpan={8} className="px-3 py-2 h-10 border-b border-[#dadce0]" />
                       </tr>
                     ))
-                  ) : filteredClients.map((client, idx) => {
+                  ) : pagedClients.map((client, idx) => {
                     const clientKey = client.key;
                     const currentTag = clientTags[clientKey];
                     const lastLead = client.leads[0]; // Leads are sorted by timestamp desc
@@ -792,7 +814,7 @@ export default function App() {
                         key={clientKey}
                         onClick={() => setSelectedClient(client)}
                         className="group transition-colors cursor-pointer hover:bg-[#f1f3f4]"
-                        initial={{ opacity: 0 }}
+                        initial={false}
                         animate={{ opacity: 1 }}
                       >
                         <td className="px-2 py-2 border-b border-r border-[#dadce0] bg-[#f8f9fa] text-center text-[10px] text-[#5f6368] font-medium">
