@@ -27,7 +27,7 @@ import {
   Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { parse, getTime, startOfDay, endOfDay, startOfWeek, startOfMonth, isWithinInterval } from 'date-fns';
+import { parse, getTime, startOfDay, endOfDay, startOfWeek, startOfMonth, isWithinInterval, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 import { Lead, Client, STATUS_THEMES, ManualSale } from './types';
@@ -517,7 +517,12 @@ export default function App() {
     const manualRevenue = manualSales.reduce((acc, curr) => acc + curr.value, 0);
     const totalCommission = manualSales.reduce((acc, curr) => acc + curr.commission, 0);
 
-    return { totalClients, activeClients, totalRevenue, manualRevenue, totalCommission };
+    const currentMonthKey = format(new Date(), 'yyyy-MM');
+    const currentMonthCommission = manualSales
+      .filter(s => format(new Date(s.date), 'yyyy-MM') === currentMonthKey)
+      .reduce((acc, curr) => acc + curr.commission, 0);
+
+    return { totalClients, activeClients, totalRevenue, manualRevenue, totalCommission, currentMonthCommission };
   }, [clients, manualSales]);
 
   const dashboardData = useMemo(() => {
@@ -533,6 +538,24 @@ export default function App() {
     });
 
     return Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }, [manualSales]);
+
+  const monthlyData = useMemo(() => {
+    const monthlyMap = new Map<string, { month: string; monthName: string; value: number; commission: number; count: number }>();
+    
+    manualSales.forEach(sale => {
+      const date = new Date(sale.date);
+      const monthKey = format(date, 'yyyy-MM');
+      const monthName = format(date, 'MMMM yyyy', { locale: ptBR });
+      
+      const existing = monthlyMap.get(monthKey) || { month: monthKey, monthName, value: 0, commission: 0, count: 0 };
+      existing.value += sale.value;
+      existing.commission += sale.commission;
+      existing.count += 1;
+      monthlyMap.set(monthKey, existing);
+    });
+
+    return Array.from(monthlyMap.values()).sort((a, b) => b.month.localeCompare(a.month));
   }, [manualSales]);
 
   const uniqueStatuses = useMemo(() => {
@@ -966,25 +989,25 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             <div className="bg-white border border-modern-border p-10 shadow-sm">
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-12 h-12 bg-emerald-100 flex items-center justify-center text-emerald-600">
+                <div className="w-12 h-12 bg-emerald-600 flex items-center justify-center text-white">
                   <TrendingUp size={24} />
                 </div>
-                <p className="text-[11px] font-extrabold uppercase tracking-widest text-modern-secondary">Minha Comissão Total</p>
+                <p className="text-[11px] font-extrabold uppercase tracking-widest text-modern-secondary">Comissão (Mês Atual)</p>
               </div>
               <p className="text-4xl font-extrabold text-emerald-600">
-                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.totalCommission)}
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.currentMonthCommission)}
               </p>
             </div>
             
             <div className="bg-white border border-modern-border p-10 shadow-sm">
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-12 h-12 bg-modern-primary/10 flex items-center justify-center text-modern-primary">
+                <div className="w-12 h-12 bg-emerald-100 flex items-center justify-center text-emerald-600">
                   <DollarSign size={24} />
                 </div>
-                <p className="text-[11px] font-extrabold uppercase tracking-widest text-modern-secondary">Vendas Manuais</p>
+                <p className="text-[11px] font-extrabold uppercase tracking-widest text-modern-secondary">Comissão Total</p>
               </div>
               <p className="text-4xl font-extrabold text-modern-text">
-                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.manualRevenue)}
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.totalCommission)}
               </p>
             </div>
 
@@ -1071,6 +1094,56 @@ export default function App() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+            </div>
+          </div>
+
+          {/* Monthly Commission Table */}
+          <div className="bg-white border border-modern-border p-10 shadow-sm">
+            <div className="flex items-center justify-between mb-10">
+              <h3 className="text-xs font-extrabold uppercase tracking-widest text-modern-text">Resumo de Comissão por Mês</h3>
+              <div className="flex items-center gap-2 text-emerald-600">
+                <Calendar size={16} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Histórico Mensal</span>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-separate border-spacing-0">
+                <thead>
+                  <tr>
+                    <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-widest text-modern-secondary border-b border-modern-border">Mês</th>
+                    <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-widest text-modern-secondary border-b border-modern-border text-center">Vendas</th>
+                    <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-widest text-modern-secondary border-b border-modern-border text-right">Faturamento</th>
+                    <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-widest text-modern-secondary border-b border-modern-border text-right">Comissão</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlyData.length > 0 ? (
+                    monthlyData.map((data) => (
+                      <tr key={data.month} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-5 text-sm font-bold text-modern-text border-b border-modern-border capitalize">
+                          {data.monthName}
+                        </td>
+                        <td className="px-6 py-5 text-sm font-bold text-modern-secondary border-b border-modern-border text-center">
+                          {data.count}
+                        </td>
+                        <td className="px-6 py-5 text-sm font-bold text-modern-text border-b border-modern-border text-right">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.value)}
+                        </td>
+                        <td className="px-6 py-5 text-sm font-extrabold text-emerald-600 border-b border-modern-border text-right">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.commission)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-10 text-center text-[11px] font-bold text-modern-secondary uppercase tracking-wider border-b border-modern-border">
+                        Nenhuma venda registrada para gerar o histórico mensal
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
