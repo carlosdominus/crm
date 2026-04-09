@@ -104,7 +104,7 @@ export default function App() {
   const [saleForm, setSaleForm] = useState({
     productIndex: 0,
     value: "",
-    date: new Date().toISOString().split('T')[0]
+    date: format(new Date(), 'yyyy-MM-dd')
   });
 
   useEffect(() => {
@@ -199,7 +199,7 @@ export default function App() {
     setSaleForm({
       productIndex: 0,
       value: "",
-      date: new Date().toISOString().split('T')[0]
+      date: format(new Date(), 'yyyy-MM-dd')
     });
     
     // Sync sale to Google Sheets if webhook is configured
@@ -519,7 +519,10 @@ export default function App() {
 
     const currentMonthKey = format(new Date(), 'yyyy-MM');
     const currentMonthCommission = manualSales
-      .filter(s => format(new Date(s.date), 'yyyy-MM') === currentMonthKey)
+      .filter(s => {
+        const [year, month] = s.date.split('-');
+        return `${year}-${month}` === currentMonthKey;
+      })
       .reduce((acc, curr) => acc + curr.commission, 0);
 
     return { totalClients, activeClients, totalRevenue, manualRevenue, totalCommission, currentMonthCommission };
@@ -544,7 +547,8 @@ export default function App() {
     const monthlyMap = new Map<string, { month: string; monthName: string; value: number; commission: number; count: number }>();
     
     manualSales.forEach(sale => {
-      const date = new Date(sale.date);
+      const [year, month, day] = sale.date.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
       const monthKey = format(date, 'yyyy-MM');
       const monthName = format(date, 'MMMM yyyy', { locale: ptBR });
       
@@ -1051,7 +1055,10 @@ export default function App() {
                       axisLine={false} 
                       tickLine={false} 
                       tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
-                      tickFormatter={(val) => new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      tickFormatter={(val) => {
+                        const [year, month, day] = val.split('-');
+                        return `${day}/${month}`;
+                      }}
                     />
                     <YAxis 
                       axisLine={false} 
@@ -1080,7 +1087,10 @@ export default function App() {
                       axisLine={false} 
                       tickLine={false} 
                       tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
-                      tickFormatter={(val) => new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      tickFormatter={(val) => {
+                        const [year, month, day] = val.split('-');
+                        return `${day}/${month}`;
+                      }}
                     />
                     <YAxis 
                       axisLine={false} 
@@ -1165,7 +1175,12 @@ export default function App() {
                 <tbody className="divide-y divide-modern-border">
                   {manualSales.sort((a, b) => b.timestamp - a.timestamp).map(sale => (
                     <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-8 py-5 text-sm font-bold text-modern-text">{new Date(sale.date).toLocaleDateString('pt-BR')}</td>
+                      <td className="px-8 py-5 text-sm font-bold text-modern-text">
+                        {(() => {
+                          const [year, month, day] = sale.date.split('-');
+                          return `${day}/${month}/${year}`;
+                        })()}
+                      </td>
                       <td className="px-8 py-5 text-sm font-medium text-modern-text">{sale.productName}</td>
                       <td className="px-8 py-5 text-sm font-bold text-modern-text">
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
@@ -1257,7 +1272,12 @@ export default function App() {
                           <div key={sale.id} className="bg-slate-50 border border-modern-border p-5 flex items-center justify-between group/sale">
                             <div>
                               <p className="text-sm font-bold text-modern-text">{sale.productName}</p>
-                              <p className="text-[10px] font-bold text-modern-secondary uppercase tracking-wider">{new Date(sale.date).toLocaleDateString('pt-BR')}</p>
+                              <p className="text-[10px] font-bold text-modern-secondary uppercase tracking-wider">
+                                {(() => {
+                                  const [year, month, day] = sale.date.split('-');
+                                  return `${day}/${month}/${year}`;
+                                })()}
+                              </p>
                             </div>
                             <div className="flex items-center gap-6">
                               <div className="text-right">
