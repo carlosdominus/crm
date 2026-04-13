@@ -112,6 +112,7 @@ export default function App() {
   // Auth state
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -122,10 +123,12 @@ export default function App() {
   }, []);
 
   const handleLogin = async () => {
+    setAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao fazer login:", error);
+      setAuthError(error.message || "Erro desconhecido ao fazer login");
     }
   };
 
@@ -1637,6 +1640,11 @@ export default function App() {
 
                 <div className="pt-4 border-t border-modern-border">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-modern-secondary mb-4 block">Sincronização em Nuvem (Multi-dispositivo)</label>
+                  {authError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 text-[10px] font-bold uppercase tracking-wider">
+                      Erro: {authError}
+                    </div>
+                  )}
                   {user ? (
                     <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-100">
                       <div className="flex items-center gap-3">
