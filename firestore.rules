@@ -1,0 +1,88 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: /users/{userId}/tags/{clientKey}
+// Fields:
+//   - clientKey: string (required)
+//   - tag: string (required)
+//   - updatedAt: string (required, ISO 8601)
+//
+// Collection: /users/{userId}/sales/{saleId}
+// Fields:
+//   - id: string (required)
+//   - clientKey: string (required)
+//   - productName: string (required)
+//   - value: number (required)
+//   - commission: number (required)
+//   - date: string (required, YYYY-MM-DD)
+//   - timestamp: number (required)
+//   - createdAt: string (optional, ISO 8601)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidTag(data) {
+      return data.clientKey is string && data.clientKey.size() > 0 &&
+             data.tag is string && data.tag.size() > 0 &&
+             data.updatedAt is string;
+    }
+
+    function isValidSale(data) {
+      return data.id is string &&
+             data.clientKey is string &&
+             data.productName is string &&
+             data.value is number &&
+             data.commission is number &&
+             isValidDateString(data.date) &&
+             data.timestamp is number;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /tags/{clientKey} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidTag(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /sales/{saleId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSale(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "UserTag": {
+      "title": "User Tag",
+      "description": "Tags assigned to clients (e.g., pending, done, trash)",
+      "type": "object",
+      "properties": {
+        "clientKey": { "type": "string" },
+        "tag": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientKey", "tag", "updatedAt"]
+    },
+    "ManualSale": {
+      "title": "Manual Sale",
+      "description": "Sales recorded manually by the user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientKey": { "type": "string" },
+        "productName": { "type": "string" },
+        "value": { "type": "number" },
+        "commission": { "type": "number" },
+        "date": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "clientKey", "productName", "value", "commission", "date", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/tags/{clientKey}": {
+      "schema": "UserTag",
+      "description": "Client tags for a specific user"
+    },
+    "/users/{userId}/sales/{saleId}": {
+      "schema": "ManualSale",
+      "description": "Manual sales for a specific user"
+    }
+  }
+}

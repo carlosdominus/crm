@@ -30,6 +30,25 @@ import { motion, AnimatePresence } from 'motion/react';
 import { parse, getTime, startOfDay, endOfDay, startOfWeek, startOfMonth, isWithinInterval, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  collection, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  query, 
+  orderBy,
+  User,
+  handleFirestoreError,
+  OperationType
+} from './firebase';
+
 import { Lead, Client, STATUS_THEMES, ManualSale } from './types';
 import { cn } from './lib/utils';
 import { generatePersonalizedMessage } from './services/gemini';
@@ -90,15 +109,106 @@ export default function App() {
   const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem('crm_webhook_url') || "");
   const [view, setView] = useState<'crm' | 'dashboard'>('crm');
   
+  // Auth state
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Erro ao fazer login:", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+    }
+  };
+
+  // Migration logic: Move local data to cloud upon login
+  useEffect(() => {
+    if (user) {
+      const migrateData = async () => {
+        const localSales = localStorage.getItem('crm_manual_sales');
+        const localTags = localStorage.getItem('crm_client_tags');
+
+        if (localSales) {
+          try {
+            const sales = JSON.parse(localSales) as ManualSale[];
+            for (const sale of sales) {
+              await setDoc(doc(db, `users/${user.uid}/sales`, sale.id), sale);
+            }
+            localStorage.removeItem('crm_manual_sales');
+          } catch (e) {
+            console.error("Erro ao migrar vendas:", e);
+          }
+        }
+
+        if (localTags) {
+          try {
+            const tags = JSON.parse(localTags) as Record<string, any>;
+            for (const [clientKey, rawTag] of Object.entries(tags)) {
+              // Normalize tag names if they are old
+              let tag = rawTag;
+              if (tag === 'entrar em contato') tag = 'pendente';
+              else if (tag === 'contato enviado') tag = 'feito';
+
+              if (tag) {
+                await setDoc(doc(db, `users/${user.uid}/tags`, clientKey), {
+                  clientKey,
+                  tag,
+                  updatedAt: new Date().toISOString()
+                });
+              }
+            }
+            localStorage.removeItem('crm_client_tags');
+          } catch (e) {
+            console.error("Erro ao migrar tags:", e);
+          }
+        }
+      };
+      migrateData();
+    }
+  }, [user]);
+
   // Pagination state
   const [visibleCount, setVisibleCount] = useState(50);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   
   // Manual Sales state
-  const [manualSales, setManualSales] = useState<ManualSale[]>(() => {
-    const saved = localStorage.getItem('crm_manual_sales');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [manualSales, setManualSales] = useState<ManualSale[]>([]);
+
+  useEffect(() => {
+    if (!authReady) return;
+
+    if (!user) {
+      const saved = localStorage.getItem('crm_manual_sales');
+      setManualSales(saved ? JSON.parse(saved) : []);
+      return;
+    }
+
+    const q = query(collection(db, `users/${user.uid}/sales`), orderBy('timestamp', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const sales = snapshot.docs.map(doc => doc.data() as ManualSale);
+      setManualSales(sales);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/sales`);
+    });
+
+    return () => unsubscribe();
+  }, [authReady, user]);
 
   const [showAddSaleModal, setShowAddSaleModal] = useState(false);
   const [saleForm, setSaleForm] = useState({
@@ -107,42 +217,72 @@ export default function App() {
     date: format(new Date(), 'yyyy-MM-dd')
   });
 
-  useEffect(() => {
-    localStorage.setItem('crm_manual_sales', JSON.stringify(manualSales));
-  }, [manualSales]);
-
   // Filter states
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [showOnlyManualSales, setShowOnlyManualSales] = useState(false);
   
   // Tagging state
-  const [clientTags, setClientTags] = useState<Record<string, 'pendente' | 'feito' | 'lixo' | null>>(() => {
-    const saved = localStorage.getItem('crm_client_tags');
-    // Migration: old tags to new tags
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      const migrated: Record<string, any> = {};
-      Object.entries(parsed).forEach(([key, val]) => {
-        if (val === 'entrar em contato') migrated[key] = 'pendente';
-        else if (val === 'contato enviado') migrated[key] = 'feito';
-        else migrated[key] = val;
-      });
-      return migrated;
-    }
-    return {};
-  });
+  const [clientTags, setClientTags] = useState<Record<string, 'pendente' | 'feito' | 'lixo' | null>>({});
 
   useEffect(() => {
-    localStorage.setItem('crm_client_tags', JSON.stringify(clientTags));
-  }, [clientTags]);
+    if (!authReady) return;
+
+    if (!user) {
+      const saved = localStorage.getItem('crm_client_tags');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const migrated: Record<string, any> = {};
+        Object.entries(parsed).forEach(([key, val]) => {
+          if (val === 'entrar em contato') migrated[key] = 'pendente';
+          else if (val === 'contato enviado') migrated[key] = 'feito';
+          else migrated[key] = val;
+        });
+        setClientTags(migrated);
+      } else {
+        setClientTags({});
+      }
+      return;
+    }
+
+    const unsubscribe = onSnapshot(collection(db, `users/${user.uid}/tags`), (snapshot) => {
+      const tags: Record<string, 'pendente' | 'feito' | 'lixo' | null> = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        tags[data.clientKey] = data.tag;
+      });
+      setClientTags(tags);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/tags`);
+    });
+
+    return () => unsubscribe();
+  }, [authReady, user]);
 
   const toggleTag = async (clientKey: string, tag: 'pendente' | 'feito' | 'lixo') => {
     const newTag = clientTags[clientKey] === tag ? null : tag;
-    setClientTags(prev => ({
-      ...prev,
-      [clientKey]: newTag
-    }));
+
+    if (!user) {
+      const updatedTags = { ...clientTags, [clientKey]: newTag };
+      setClientTags(updatedTags);
+      localStorage.setItem('crm_client_tags', JSON.stringify(updatedTags));
+      return;
+    }
+    
+    try {
+      const tagRef = doc(db, `users/${user.uid}/tags`, clientKey);
+      if (newTag === null) {
+        await deleteDoc(tagRef);
+      } else {
+        await setDoc(tagRef, {
+          clientKey,
+          tag: newTag,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/tags/${clientKey}`);
+    }
 
     // Sync to Google Sheets if webhook is configured
     if (webhookUrl) {
@@ -177,15 +317,16 @@ export default function App() {
     setVisibleCount(50);
   }, [deferredSearchTerm, statusFilter, tagFilter, filterType]);
 
-  const handleAddSale = () => {
+  const handleAddSale = async () => {
     if (!selectedClient || !saleForm.value) return;
 
     const product = MANUAL_PRODUCTS[saleForm.productIndex] as any;
     const value = parseFloat(saleForm.value.replace(',', '.'));
     const commission = product.fixedCommission !== undefined ? product.fixedCommission : value * (product.commissionRate || 0);
     
+    const saleId = Math.random().toString(36).substr(2, 9);
     const newSale: ManualSale = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: saleId,
       clientKey: selectedClient.key,
       productName: product.name,
       value,
@@ -194,7 +335,26 @@ export default function App() {
       timestamp: new Date(saleForm.date).getTime()
     };
 
-    setManualSales(prev => [...prev, newSale]);
+    if (!user) {
+      const updatedSales = [newSale, ...manualSales];
+      setManualSales(updatedSales);
+      localStorage.setItem('crm_manual_sales', JSON.stringify(updatedSales));
+      setShowAddSaleModal(false);
+      setSaleForm({
+        productIndex: 0,
+        value: "",
+        date: format(new Date(), 'yyyy-MM-dd')
+      });
+      toggleTag(newSale.clientKey, 'feito');
+      return;
+    }
+
+    try {
+      await setDoc(doc(db, `users/${user.uid}/sales`, saleId), newSale);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/sales/${saleId}`);
+    }
+
     setShowAddSaleModal(false);
     setSaleForm({
       productIndex: 0,
@@ -225,9 +385,20 @@ export default function App() {
     toggleTag(newSale.clientKey, 'feito');
   };
 
-  const handleDeleteSale = (saleId: string) => {
+  const handleDeleteSale = async (saleId: string) => {
     const saleToDelete = manualSales.find(s => s.id === saleId);
-    setManualSales(prev => prev.filter(s => s.id !== saleId));
+
+    if (!user) {
+      const updatedSales = manualSales.filter(s => s.id !== saleId);
+      setManualSales(updatedSales);
+      localStorage.setItem('crm_manual_sales', JSON.stringify(updatedSales));
+    } else {
+      try {
+        await deleteDoc(doc(db, `users/${user.uid}/sales`, saleId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/sales/${saleId}`);
+      }
+    }
 
     // Sync deletion to Google Sheets if webhook is configured
     if (webhookUrl && saleToDelete) {
@@ -1462,6 +1633,34 @@ export default function App() {
                     placeholder="https://script.google.com/macros/s/.../exec"
                     className="w-full px-4 py-3 bg-slate-50 border border-modern-border rounded-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-modern-primary/20 transition-all"
                   />
+                </div>
+
+                <div className="pt-4 border-t border-modern-border">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-modern-secondary mb-4 block">Sincronização em Nuvem (Multi-dispositivo)</label>
+                  {user ? (
+                    <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-100">
+                      <div className="flex items-center gap-3">
+                        {user.photoURL && <img src={user.photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full" referrerPolicy="no-referrer" />}
+                        <div>
+                          <p className="text-xs font-bold text-modern-text">{user.displayName}</p>
+                          <p className="text-[10px] text-emerald-600 font-medium">Sincronizado na Nuvem</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={handleLogout}
+                        className="text-[10px] font-bold uppercase tracking-wider text-red-600 hover:underline"
+                      >
+                        Sair
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={handleLogin}
+                      className="w-full py-4 bg-modern-text text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center justify-center gap-3"
+                    >
+                      <Users size={18} /> Entrar com Google para Sincronizar
+                    </button>
+                  )}
                 </div>
 
                 <button 
