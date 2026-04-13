@@ -76,7 +76,7 @@ const MANUAL_PRODUCTS = [
   { name: "Diagnóstico Personalizado", type: 'upsell', commissionRate: 0.5 },
   { name: "Bônus Especial", type: 'upsell', commissionRate: 0.5 },
   { name: "Tônico do Cavalo", type: 'upsell', commissionRate: 0.5 },
-  { name: "Nutra Libid Turbo Caps", type: 'nutra', fixedCommission: 46.10 },
+  { name: "Nutra Libid Turbo Caps", type: 'nutra', commissionRate: 0.23401 },
 ];
 
 const PAYMENT_METHODS: Record<string, string> = {
