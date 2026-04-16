@@ -90,6 +90,47 @@ const PAYMENT_METHODS: Record<string, string> = {
   "7": "Pix"
 };
 
+const cleanPhone = (phone: string): string => {
+  if (!phone) return "";
+  // Remove all non-digits
+  let cleaned = phone.replace(/\D/g, '');
+  
+  // Handle double DDI (5555...)
+  // If it starts with 5555 and is long, it's likely a double DDI
+  if (cleaned.startsWith('5555') && cleaned.length >= 14) {
+    cleaned = cleaned.substring(2);
+  }
+  
+  // Ensure it starts with 55 if it's a Brazilian number (10 or 11 digits without DDI)
+  if (cleaned.length === 10 || cleaned.length === 11) {
+    if (!cleaned.startsWith('55')) {
+      cleaned = '55' + cleaned;
+    } else {
+      // If it starts with 55 and has 11 digits, it could be DDD 55 + 9 digits (total 11)
+      // or it could be DDI 55 + DDD + 7 digits (total 11 - invalid).
+      // In Brazil, if it's 11 digits and starts with 55, it's almost always DDD 55 + 9 digits.
+      // So we add 55 DDI.
+      cleaned = '55' + cleaned;
+    }
+  }
+  
+  return cleaned;
+};
+
+const isValidPhone = (phone: string): boolean => {
+  const cleaned = cleanPhone(phone);
+  // Brazilian numbers with DDI: 55 + DDD (2) + Number (8 or 9)
+  // Mobile: 55 + DDD + 9XXXXXXXX (13 digits)
+  if (cleaned.length === 13) {
+    return cleaned.startsWith('55') && cleaned[4] === '9';
+  }
+  // Landline: 55 + DDD + XXXXXXXX (12 digits)
+  if (cleaned.length === 12) {
+    return cleaned.startsWith('55') && cleaned[4] !== '9' && cleaned[4] !== '0';
+  }
+  return false;
+};
+
 export default function App() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -474,13 +515,9 @@ export default function App() {
             let telefoneRaw = (row['telefone'] || row['whatsapp'] || row['celular'] || row['phone'] || '').toString().trim();
             let emailRaw = (row['email'] || row['e-mail'] || row['mail'] || '').toString().trim();
 
-            // If headers are swapped or data is in the wrong place (C to B, B to C)
-            // Check if emailRaw looks like a phone and telefoneRaw looks like an email
             const isEmail = (val: string) => val.includes('@');
-            const isPhone = (val: string) => /[\d\s()-]{8,}/.test(val) && !val.includes('@');
-
+            
             if (isEmail(telefoneRaw) && !isEmail(emailRaw)) {
-              // Swap them back
               const temp = telefoneRaw;
               telefoneRaw = emailRaw;
               emailRaw = temp;
@@ -488,6 +525,8 @@ export default function App() {
               emailRaw = telefoneRaw;
               telefoneRaw = '';
             }
+
+            const cleanedTelefone = cleanPhone(telefoneRaw);
 
             if (rawStatus.startsWith('approved') || rawStatus === 'aprovado' || rawStatus === 'pago' || rawStatus === 'concluido') {
               normalizedStatus = 'Aprovado';
@@ -504,7 +543,7 @@ export default function App() {
             return {
               id: row['id'] || Math.random().toString(36).substr(2, 9),
               nome: (row['nome'] || 'Sem Nome').trim(),
-              telefone: telefoneRaw,
+              telefone: cleanedTelefone,
               email: emailRaw,
               produto: (row['produto'] || '').trim(),
               valor: isNaN(leadValue) ? 'R$ 0,00' : `R$ ${leadValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
@@ -522,32 +561,49 @@ export default function App() {
           const clientsList: Client[] = [];
           const emailMap = new Map<string, Client>();
           const phoneMap = new Map<string, Client>();
+          const nameMap = new Map<string, Client>();
           const newTags = { ...clientTags };
           let tagsChanged = false;
           
           rawLeads.forEach(lead => {
             const emailKey = lead.email?.toLowerCase().trim();
             const phoneKey = lead.telefone?.trim();
+            const nameKey = lead.nome?.toLowerCase().trim();
             
             let existing: Client | undefined;
             if (emailKey && emailMap.has(emailKey)) {
               existing = emailMap.get(emailKey);
             } else if (phoneKey && phoneMap.has(phoneKey)) {
               existing = phoneMap.get(phoneKey);
+            } else if (nameKey && nameMap.has(nameKey) && nameKey !== 'sem nome') {
+              // Fallback to name merging if no email/phone match
+              existing = nameMap.get(nameKey);
             }
 
             if (existing) {
               existing.leads.push(lead);
-              // Update with better data if available (prioritize phone for display)
-              if (!existing.telefone && lead.telefone) {
+              
+              // Update with better data if available
+              // Prioritize valid phones over invalid/empty ones
+              const currentPhoneValid = isValidPhone(existing.telefone);
+              const newPhoneValid = isValidPhone(lead.telefone);
+
+              if (!currentPhoneValid && newPhoneValid) {
                 existing.telefone = lead.telefone;
-                phoneMap.set(lead.telefone.trim(), existing);
+                if (lead.telefone) phoneMap.set(lead.telefone, existing);
+              } else if (!existing.telefone && lead.telefone) {
+                existing.telefone = lead.telefone;
+                if (lead.telefone) phoneMap.set(lead.telefone, existing);
               }
+
               if (!existing.email && lead.email) {
                 existing.email = lead.email;
                 emailMap.set(lead.email.toLowerCase().trim(), existing);
               }
-              if (existing.nome === 'Sem Nome' && lead.nome !== 'Sem Nome') existing.nome = lead.nome;
+              if (existing.nome === 'Sem Nome' && lead.nome !== 'Sem Nome') {
+                existing.nome = lead.nome;
+                if (nameKey) nameMap.set(nameKey, existing);
+              }
               
               const leadValue = lead.numericValue;
               const isAprovado = lead.status === 'Aprovado';
@@ -579,12 +635,16 @@ export default function App() {
               clientsList.push(newClient);
               if (emailKey) emailMap.set(emailKey, newClient);
               if (phoneKey) phoneMap.set(phoneKey, newClient);
+              if (nameKey && nameKey !== 'sem nome') nameMap.set(nameKey, newClient);
+            }
+          });
 
-              // Auto-tag clients without phone as 'lixo'
-              if (!lead.telefone && !newTags[clientKey]) {
-                newTags[clientKey] = 'lixo';
-                tagsChanged = true;
-              }
+          // Final pass to auto-tag 'lixo' only if NO valid phone exists for the client
+          clientsList.forEach(client => {
+            const hasValidPhone = isValidPhone(client.telefone) || client.leads.some(l => isValidPhone(l.telefone));
+            if (!hasValidPhone && !newTags[client.key]) {
+              newTags[client.key] = 'lixo';
+              tagsChanged = true;
             }
           });
 
