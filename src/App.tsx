@@ -640,7 +640,6 @@ export default function App() {
           });
 
           // Final pass to auto-tag 'lixo' only if NO valid phone exists for the client
-          // AND remove 'lixo' tag if a valid phone IS found
           clientsList.forEach(client => {
             const hasValidPhone = isValidPhone(client.telefone) || client.leads.some(l => isValidPhone(l.telefone));
             if (!hasValidPhone) {
@@ -648,10 +647,6 @@ export default function App() {
                 newTags[client.key] = 'lixo';
                 tagsChanged = true;
               }
-            } else if (newTags[client.key] === 'lixo') {
-              // If we have a valid phone now, remove the 'lixo' tag
-              delete newTags[client.key];
-              tagsChanged = true;
             }
           });
 
@@ -1074,13 +1069,8 @@ export default function App() {
                     ))
                   ) : pagedClients.map((client, idx) => {
                     const clientKey = client.key;
-                    let currentTag = clientTags[clientKey];
+                    const currentTag = clientTags[clientKey];
                     
-                    // Hide 'lixo' tag if a valid phone is present (it was likely auto-tagged by a bad line)
-                    if (currentTag === 'lixo' && (isValidPhone(client.telefone) || client.leads.some(l => isValidPhone(l.telefone)))) {
-                      currentTag = null;
-                    }
-
                     const lastLead = client.leads[0]; // Leads are sorted by timestamp desc
 
                     return (
