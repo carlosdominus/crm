@@ -53,4 +53,6 @@ export const STATUS_THEMES: Record<string, { bg: string; text: string }> = {
   "Cancelado": { bg: "bg-rose-600", text: "text-white" },
   "Reembolsado": { bg: "bg-fortnite-blue", text: "text-white" },
   "Carrinho Abandonado": { bg: "bg-slate-400", text: "text-white" },
+  "Expirado": { bg: "bg-orange-600", text: "text-white" },
+  "Lixo": { bg: "bg-rose-100", text: "text-rose-600" },
 };

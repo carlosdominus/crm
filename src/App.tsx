@@ -121,12 +121,12 @@ const isValidPhone = (phone: string): boolean => {
   const cleaned = cleanPhone(phone);
   // Brazilian numbers with DDI: 55 + DDD (2) + Number (8 or 9)
   // Mobile: 55 + DDD + 9XXXXXXXX (13 digits)
+  // Landline or Mobile without the extra 9: 55 + DDD + XXXXXXXX (12 digits)
   if (cleaned.length === 13) {
     return cleaned.startsWith('55') && cleaned[4] === '9';
   }
-  // Landline: 55 + DDD + XXXXXXXX (12 digits)
   if (cleaned.length === 12) {
-    return cleaned.startsWith('55') && cleaned[4] !== '9' && cleaned[4] !== '0';
+    return cleaned.startsWith('55');
   }
   return false;
 };
@@ -538,6 +538,10 @@ export default function App() {
               normalizedStatus = 'Reembolsado';
             } else if (rawStatus === '12') {
               normalizedStatus = 'Carrinho Abandonado';
+            } else if (rawStatus.startsWith('expired') || rawStatus === 'expirado') {
+              normalizedStatus = 'Expirado';
+            } else if (rawStatus === 'lixo' || (row['tag'] && row['tag'].toString().toLowerCase().trim() === 'lixo')) {
+              normalizedStatus = 'Lixo';
             }
 
             return {
@@ -570,6 +574,14 @@ export default function App() {
             const phoneKey = lead.telefone?.trim();
             const nameKey = lead.nome?.toLowerCase().trim();
             
+            // If lead is explicitly marked as 'lixo' in the spreadsheet, set the tag
+            if (lead.status === 'Lixo') {
+              const clientKey = (lead.email || lead.telefone || lead.nome).toLowerCase().trim();
+              if (newTags[clientKey] !== 'lixo') {
+                newTags[clientKey] = 'lixo';
+                tagsChanged = true;
+              }
+            }
             let existing: Client | undefined;
             if (emailKey && emailMap.has(emailKey)) {
               existing = emailMap.get(emailKey);
@@ -647,6 +659,11 @@ export default function App() {
                 newTags[client.key] = 'lixo';
                 tagsChanged = true;
               }
+            } else if (newTags[client.key] === 'lixo' && hasValidPhone) {
+              // If we have a valid phone now, remove the 'lixo' tag automatically
+              // This fixes cases like Geovane where a valid number was finally found
+              delete newTags[client.key];
+              tagsChanged = true;
             }
           });
 
