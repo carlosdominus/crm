@@ -149,6 +149,23 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem('crm_webhook_url') || "");
   const [view, setView] = useState<'crm' | 'dashboard'>('crm');
+
+  const getClientTag = (client: Client) => {
+    // 1. Manual tag from Firestore (highest priority)
+    const manualTag = clientTags[client.key];
+    if (manualTag) return manualTag;
+
+    // 2. Explicit 'Lixo' status in Spreadsheet
+    if (client.status === 'Lixo' || client.leads.some(l => l.status === 'Lixo')) {
+      return 'lixo';
+    }
+
+    // 3. Auto-detected 'Lixo' (no phone)
+    const hasValidPhone = isValidPhone(client.telefone) || client.leads.some(l => isValidPhone(l.telefone));
+    if (!hasValidPhone) return 'lixo';
+
+    return 'enviar msg';
+  };
   
   // Auth state
   const [user, setUser] = useState<User | null>(null);
@@ -567,19 +584,11 @@ export default function App() {
           const phoneMap = new Map<string, Client>();
           const nameMap = new Map<string, Client>();
           
-          // Track tags found EXPLICITLY in the CSV
-          const csvLixoKeys = new Set<string>();
-          
           rawLeads.forEach(lead => {
             const emailKey = lead.email?.toLowerCase().trim();
             const phoneKey = lead.telefone?.trim();
             const nameKey = lead.nome?.toLowerCase().trim();
             
-            // If lead is explicitly marked as 'lixo' in the spreadsheet, track it
-            if (lead.status === 'Lixo') {
-              const clientKey = (lead.email || lead.telefone || lead.nome).toLowerCase().trim();
-              csvLixoKeys.add(clientKey);
-            }
             let existing: Client | undefined;
             if (emailKey && emailMap.has(emailKey)) {
               existing = emailMap.get(emailKey);
@@ -649,50 +658,23 @@ export default function App() {
             }
           });
 
-          // pass labels to state using functional update to avoid race conditions and overwriting manual tags
-          setClientTags(prev => {
-            const updated = { ...prev };
-            let locallyChanged = false;
-
-            // 1. Apply tags explicitly found in CSV status
-            csvLixoKeys.forEach(key => {
-              if (updated[key] !== 'lixo') {
-                updated[key] = 'lixo';
-                locallyChanged = true;
-              }
-            });
-
-            // 2. Auto-tag logic for clients with no valid phone
-            // 3. Auto-cleanup logic for clients with valid phone
-            clientsList.forEach(client => {
-              const hasValidPhone = isValidPhone(client.telefone) || client.leads.some(l => isValidPhone(l.telefone));
-              if (!hasValidPhone) {
-                if (!updated[client.key]) {
-                  updated[client.key] = 'lixo';
-                  locallyChanged = true;
-                }
-              } else if (updated[client.key] === 'lixo' && hasValidPhone) {
-                // Remove auto-lixo if a valid phone is found (only if it matches 'lixo' to avoid nuking 'feito'/'pendente')
-                // But don't remove it if it was explicitly in the CSV Lixo (csvLixoKeys)
-                if (!csvLixoKeys.has(client.key)) {
-                  delete updated[client.key];
-                  locallyChanged = true;
-                }
-              }
-            });
-
-            return locallyChanged ? updated : prev;
-          });
-
-          const sortedClients = clientsList.map(client => ({
-            ...client,
-            leads: client.leads.sort((a, b) => {
-              if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
-              if (b.status === 'Aprovado' && a.status !== 'Aprovado') return 1;
-              if (a.status === 'Aprovado' && b.status !== 'Aprovado') return -1;
-              return 0;
-            })
-          })).sort((a, b) => b.lastPurchaseTimestamp - a.lastPurchaseTimestamp);
+          // Pass everything to setClients, auto-tagging is now derived
+          const sortedClients = clientsList.map(client => {
+            // Ensure stable key: always prefer email, then phone, then name
+            // regardless of which lead was processed first during merging
+            const stableKey = (client.email || client.telefone || client.nome).toLowerCase().trim();
+            
+            return {
+              ...client,
+              key: stableKey,
+              leads: client.leads.sort((a, b) => {
+                if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
+                if (b.status === 'Aprovado' && a.status !== 'Aprovado') return 1;
+                if (a.status === 'Aprovado' && b.status !== 'Aprovado') return -1;
+                return 0;
+              })
+            };
+          }).sort((a, b) => b.lastPurchaseTimestamp - a.lastPurchaseTimestamp);
 
           setClients(sortedClients);
           setLoading(false);
@@ -736,7 +718,7 @@ export default function App() {
 
     return clients.filter(client => {
       const clientKey = client.key;
-      const tag = clientTags[clientKey] || 'enviar msg';
+      const tag = getClientTag(client);
 
       if (showOnlyManualSales && !manualSalesKeys.has(clientKey)) return false;
 
@@ -1101,7 +1083,8 @@ export default function App() {
                     ))
                   ) : pagedClients.map((client, idx) => {
                     const clientKey = client.key;
-                    const currentTag = clientTags[clientKey];
+                    const manualTag = clientTags[clientKey];
+                    const currentTag = getClientTag(client);
                     
                     const lastLead = client.leads[0]; // Leads are sorted by timestamp desc
 
