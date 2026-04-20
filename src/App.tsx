@@ -164,7 +164,7 @@ export default function App() {
     const hasValidPhone = isValidPhone(client.telefone) || client.leads.some(l => isValidPhone(l.telefone));
     if (!hasValidPhone) return 'lixo';
 
-    return 'enviar msg';
+    return null;
   };
   
   // Auth state
@@ -728,7 +728,7 @@ export default function App() {
         client.telefone.includes(deferredSearchTerm);
       
       const matchesStatus = statusFilter === 'all' || client.status === statusFilter;
-      const matchesTag = tagFilter === 'all' || tag === tagFilter;
+      const matchesTag = tagFilter === 'all' || (tagFilter === 'enviar msg' ? tag === null : tag === tagFilter);
 
       let matchesDate = true;
       if (filterType !== 'all') {
