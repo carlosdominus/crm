@@ -566,21 +566,19 @@ export default function App() {
           const emailMap = new Map<string, Client>();
           const phoneMap = new Map<string, Client>();
           const nameMap = new Map<string, Client>();
-          const newTags = { ...clientTags };
-          let tagsChanged = false;
+          
+          // Track tags found EXPLICITLY in the CSV
+          const csvLixoKeys = new Set<string>();
           
           rawLeads.forEach(lead => {
             const emailKey = lead.email?.toLowerCase().trim();
             const phoneKey = lead.telefone?.trim();
             const nameKey = lead.nome?.toLowerCase().trim();
             
-            // If lead is explicitly marked as 'lixo' in the spreadsheet, set the tag
+            // If lead is explicitly marked as 'lixo' in the spreadsheet, track it
             if (lead.status === 'Lixo') {
               const clientKey = (lead.email || lead.telefone || lead.nome).toLowerCase().trim();
-              if (newTags[clientKey] !== 'lixo') {
-                newTags[clientKey] = 'lixo';
-                tagsChanged = true;
-              }
+              csvLixoKeys.add(clientKey);
             }
             let existing: Client | undefined;
             if (emailKey && emailMap.has(emailKey)) {
@@ -651,20 +649,39 @@ export default function App() {
             }
           });
 
-          // Final pass to auto-tag 'lixo' only if NO valid phone exists for the client
-          clientsList.forEach(client => {
-            const hasValidPhone = isValidPhone(client.telefone) || client.leads.some(l => isValidPhone(l.telefone));
-            if (!hasValidPhone) {
-              if (!newTags[client.key]) {
-                newTags[client.key] = 'lixo';
-                tagsChanged = true;
+          // pass labels to state using functional update to avoid race conditions and overwriting manual tags
+          setClientTags(prev => {
+            const updated = { ...prev };
+            let locallyChanged = false;
+
+            // 1. Apply tags explicitly found in CSV status
+            csvLixoKeys.forEach(key => {
+              if (updated[key] !== 'lixo') {
+                updated[key] = 'lixo';
+                locallyChanged = true;
               }
-            } else if (newTags[client.key] === 'lixo' && hasValidPhone) {
-              // If we have a valid phone now, remove the 'lixo' tag automatically
-              // This fixes cases like Geovane where a valid number was finally found
-              delete newTags[client.key];
-              tagsChanged = true;
-            }
+            });
+
+            // 2. Auto-tag logic for clients with no valid phone
+            // 3. Auto-cleanup logic for clients with valid phone
+            clientsList.forEach(client => {
+              const hasValidPhone = isValidPhone(client.telefone) || client.leads.some(l => isValidPhone(l.telefone));
+              if (!hasValidPhone) {
+                if (!updated[client.key]) {
+                  updated[client.key] = 'lixo';
+                  locallyChanged = true;
+                }
+              } else if (updated[client.key] === 'lixo' && hasValidPhone) {
+                // Remove auto-lixo if a valid phone is found (only if it matches 'lixo' to avoid nuking 'feito'/'pendente')
+                // But don't remove it if it was explicitly in the CSV Lixo (csvLixoKeys)
+                if (!csvLixoKeys.has(client.key)) {
+                  delete updated[client.key];
+                  locallyChanged = true;
+                }
+              }
+            });
+
+            return locallyChanged ? updated : prev;
           });
 
           const sortedClients = clientsList.map(client => ({
@@ -676,8 +693,6 @@ export default function App() {
               return 0;
             })
           })).sort((a, b) => b.lastPurchaseTimestamp - a.lastPurchaseTimestamp);
-
-          if (tagsChanged) setClientTags(newTags);
 
           setClients(sortedClients);
           setLoading(false);
