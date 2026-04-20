@@ -35,7 +35,7 @@ export interface Client {
   lastPurchaseDate: string;
   lastPurchaseTimestamp: number;
   status: string; // Overall status (e.g., most recent)
-  tag?: 'pendente' | 'feito' | 'lixo' | null;
+  tag?: 'pendente' | 'vendido' | 'lixo' | null;
   manualSales?: ManualSale[];
 }
 

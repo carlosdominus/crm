@@ -284,7 +284,7 @@ export default function App() {
   const [showOnlyManualSales, setShowOnlyManualSales] = useState(false);
   
   // Tagging state
-  const [clientTags, setClientTags] = useState<Record<string, 'pendente' | 'feito' | 'lixo' | null>>({});
+  const [clientTags, setClientTags] = useState<Record<string, 'pendente' | 'vendido' | 'lixo' | null>>({});
 
   useEffect(() => {
     if (!authReady) return;
@@ -296,7 +296,7 @@ export default function App() {
         const migrated: Record<string, any> = {};
         Object.entries(parsed).forEach(([key, val]) => {
           if (val === 'entrar em contato') migrated[key] = 'pendente';
-          else if (val === 'contato enviado') migrated[key] = 'feito';
+          else if (val === 'contato enviado' || val === 'feito') migrated[key] = 'vendido';
           else migrated[key] = val;
         });
         setClientTags(migrated);
@@ -307,10 +307,11 @@ export default function App() {
     }
 
     const unsubscribe = onSnapshot(collection(db, `users/${user.uid}/tags`), (snapshot) => {
-      const tags: Record<string, 'pendente' | 'feito' | 'lixo' | null> = {};
+      const tags: Record<string, 'pendente' | 'vendido' | 'lixo' | null> = {};
       snapshot.docs.forEach(doc => {
         const data = doc.data();
-        tags[data.clientKey] = data.tag;
+        // Legacy support: map 'feito' to 'vendido'
+        tags[data.clientKey] = data.tag === 'feito' ? 'vendido' : data.tag;
       });
       setClientTags(tags);
     }, (error) => {
@@ -320,7 +321,7 @@ export default function App() {
     return () => unsubscribe();
   }, [authReady, user]);
 
-  const toggleTag = async (clientKey: string, tag: 'pendente' | 'feito' | 'lixo') => {
+  const toggleTag = async (clientKey: string, tag: 'pendente' | 'vendido' | 'lixo') => {
     const newTag = clientTags[clientKey] === tag ? null : tag;
 
     if (!user) {
@@ -348,14 +349,21 @@ export default function App() {
     // Sync to Google Sheets if webhook is configured
     if (webhookUrl) {
       try {
+        // Enviar dados extras para ajudar a planilha a identificar o cliente
+        const client = clients.find(c => c.key === clientKey);
+        
         await fetch(webhookUrl, {
           method: 'POST',
-          mode: 'no-cors',
+          mode: 'no-cors', // Mantido no-cors para evitar problemas com Google Apps Script
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'tag_update',
             clientKey,
-            tag: newTag || '',
+            tag: newTag || 'limpar', // 'limpar' se a tag for removida
+            label: !newTag ? '' : (newTag === 'vendido' ? 'Vendido' : newTag === 'pendente' ? 'Pendente' : 'Lixo'),
+            nome: client?.nome || '',
+            telefone: client?.telefone || '',
+            email: client?.email || '',
             timestamp: new Date().toISOString()
           })
         });
@@ -406,7 +414,7 @@ export default function App() {
         value: "",
         date: format(new Date(), 'yyyy-MM-dd')
       });
-      toggleTag(newSale.clientKey, 'feito');
+      toggleTag(newSale.clientKey, 'vendido');
       return;
     }
 
@@ -426,6 +434,7 @@ export default function App() {
     // Sync sale to Google Sheets if webhook is configured
     if (webhookUrl) {
       try {
+        const client = clients.find(c => c.key === newSale.clientKey);
         fetch(webhookUrl, {
           method: 'POST',
           mode: 'no-cors',
@@ -434,6 +443,9 @@ export default function App() {
             type: 'sale_added',
             sale: newSale,
             clientKey: newSale.clientKey,
+            nome: client?.nome || '',
+            telefone: client?.telefone || '',
+            email: client?.email || '',
             timestamp: new Date().toISOString()
           })
         });
@@ -442,8 +454,8 @@ export default function App() {
       }
     }
 
-    // Also update the tag to 'feito'
-    toggleTag(newSale.clientKey, 'feito');
+    // Also update the tag to 'vendido'
+    toggleTag(newSale.clientKey, 'vendido');
   };
 
   const handleDeleteSale = async (saleId: string) => {
@@ -464,6 +476,7 @@ export default function App() {
     // Sync deletion to Google Sheets if webhook is configured
     if (webhookUrl && saleToDelete) {
       try {
+        const client = clients.find(c => c.key === saleToDelete.clientKey);
         fetch(webhookUrl, {
           method: 'POST',
           mode: 'no-cors',
@@ -472,6 +485,9 @@ export default function App() {
             type: 'sale_deleted',
             saleId: saleId,
             clientKey: saleToDelete.clientKey,
+            nome: client?.nome || '',
+            telefone: client?.telefone || '',
+            email: client?.email || '',
             timestamp: new Date().toISOString()
           })
         });
@@ -1016,7 +1032,7 @@ export default function App() {
                             { id: 'all', label: 'Todas' },
                             { id: 'enviar msg', label: 'Enviar Msg' },
                             { id: 'pendente', label: 'Pendente' },
-                            { id: 'feito', label: 'Feito' },
+                            { id: 'vendido', label: 'Vendido' },
                             { id: 'lixo', label: 'Lixo' }
                           ].map((item) => (
                             <button
@@ -1123,14 +1139,14 @@ export default function App() {
                               <Clock size={12} />
                             </button>
                             <button 
-                              onClick={() => toggleTag(clientKey, 'feito')}
+                              onClick={() => toggleTag(clientKey, 'vendido')}
                               className={cn(
                                 "w-6 h-6 rounded-none flex items-center justify-center transition-all border",
-                                currentTag === 'feito' 
+                                currentTag === 'vendido' 
                                   ? "bg-emerald-100 border-emerald-200 text-emerald-600" 
                                   : "bg-white border-[#dadce0] text-[#5f6368] hover:bg-slate-50"
                               )}
-                              title="Feito (Vendido)"
+                              title="Vendido"
                             >
                               <CheckCircle2 size={12} />
                             </button>
@@ -1211,12 +1227,12 @@ export default function App() {
                               "px-1 py-0.5 rounded-none text-[9px] font-bold uppercase",
                               !currentTag ? "bg-blue-100 text-blue-600" :
                               currentTag === 'pendente' ? "bg-amber-100 text-amber-600" : 
-                              currentTag === 'feito' ? "bg-emerald-100 text-emerald-600" :
+                              currentTag === 'vendido' ? "bg-emerald-100 text-emerald-600" :
                               "bg-rose-100 text-rose-600"
                             )}>
                               {!currentTag ? 'Enviar Msg' : 
                                currentTag === 'pendente' ? 'Pendente' : 
-                               currentTag === 'feito' ? 'Feito' : 'Lixo'}
+                               currentTag === 'vendido' ? 'Vendido' : 'Lixo'}
                             </div>
                           </div>
                         </td>
