@@ -155,12 +155,15 @@ export default function App() {
     const manualTag = clientTags[client.key];
     if (manualTag) return manualTag;
 
-    // 2. Explicit 'Lixo' status in Spreadsheet
+    // 2. Automatic 'Vendido' detection (if they have spent money)
+    if (client.totalSpent > 0) return 'vendido';
+
+    // 3. Explicit 'Lixo' status in Spreadsheet
     if (client.status === 'Lixo' || client.leads.some(l => l.status === 'Lixo')) {
       return 'lixo';
     }
 
-    // 3. Auto-detected 'Lixo' (no phone)
+    // 4. Auto-detected 'Lixo' (no phone)
     const hasValidPhone = isValidPhone(client.telefone) || client.leads.some(l => isValidPhone(l.telefone));
     if (!hasValidPhone) return 'lixo';
 
@@ -713,6 +716,35 @@ export default function App() {
     fetchData();
   }, []);
 
+  const enrichedClients = useMemo(() => {
+    // Map manual sales to client keys for faster lookup
+    const salesByClient = new Map<string, ManualSale[]>();
+    manualSales.forEach(sale => {
+      const list = salesByClient.get(sale.clientKey) || [];
+      list.push(sale);
+      salesByClient.set(sale.clientKey, list);
+    });
+
+    return clients.map(client => {
+      const clientManualSales = salesByClient.get(client.key) || [];
+      const manualSpent = clientManualSales.reduce((sum, s) => sum + s.value, 0);
+      const totalSpent = client.totalSpent + manualSpent;
+      
+      // Prioritize "Aprovado" status if there are any sales (manual or leads)
+      let status = client.status;
+      if (totalSpent > 0 && status !== 'Aprovado') {
+        status = 'Aprovado';
+      }
+
+      return {
+        ...client,
+        totalSpent,
+        status,
+        manualSales: clientManualSales
+      };
+    });
+  }, [clients, manualSales]);
+
   const filteredClients = useMemo(() => {
     const now = new Date();
     let start: Date | null = null;
@@ -732,7 +764,7 @@ export default function App() {
 
     const manualSalesKeys = new Set(manualSales.map(s => s.clientKey));
 
-    return clients.filter(client => {
+    return enrichedClients.filter(client => {
       const clientKey = client.key;
       const tag = getClientTag(client);
 
@@ -760,7 +792,12 @@ export default function App() {
       
       return matchesSearch && matchesStatus && matchesTag && matchesDate;
     });
-  }, [clients, deferredSearchTerm, filterType, customStartDate, customEndDate, statusFilter, tagFilter, clientTags, showOnlyManualSales, manualSales]);
+  }, [enrichedClients, deferredSearchTerm, filterType, customStartDate, customEndDate, statusFilter, tagFilter, clientTags, showOnlyManualSales, manualSales]);
+
+  const currentSelectedClient = useMemo(() => {
+    if (!selectedClient) return null;
+    return enrichedClients.find(c => c.key === selectedClient.key) || selectedClient;
+  }, [selectedClient, enrichedClients]);
 
   const pagedClients = useMemo(() => {
     return filteredClients.slice(0, visibleCount);
@@ -776,9 +813,9 @@ export default function App() {
   };
 
   const stats = useMemo(() => {
-    const totalClients = clients.length;
-    const activeClients = clients.filter(c => c.leads.some(l => l.status === 'Aprovado')).length;
-    const totalRevenue = clients.reduce((acc, curr) => acc + curr.totalSpent, 0);
+    const totalClients = enrichedClients.length;
+    const activeClients = enrichedClients.filter(c => c.totalSpent > 0).length;
+    const totalRevenue = enrichedClients.reduce((acc, curr) => acc + curr.totalSpent, 0);
     
     const manualRevenue = manualSales.reduce((acc, curr) => acc + curr.value, 0);
     const totalCommission = manualSales.reduce((acc, curr) => acc + curr.commission, 0);
@@ -792,7 +829,7 @@ export default function App() {
       .reduce((acc, curr) => acc + curr.commission, 0);
 
     return { totalClients, activeClients, totalRevenue, manualRevenue, totalCommission, currentMonthCommission };
-  }, [clients, manualSales]);
+  }, [enrichedClients, manualSales]);
 
   const dashboardData = useMemo(() => {
     const dailyMap = new Map<string, { date: string; value: number; commission: number; count: number }>();
@@ -829,9 +866,9 @@ export default function App() {
   }, [manualSales]);
 
   const uniqueStatuses = useMemo(() => {
-    const statuses = new Set(clients.map(c => c.status));
+    const statuses = new Set(enrichedClients.map(c => c.status));
     return Array.from(statuses).sort();
-  }, [clients]);
+  }, [enrichedClients]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -1476,7 +1513,7 @@ export default function App() {
 
       {/* Detail Panel - Modern Style */}
       <AnimatePresence>
-        {selectedClient && (
+        {currentSelectedClient && (
           <>
             <motion.div 
               initial={{ opacity: 0 }}
@@ -1502,15 +1539,15 @@ export default function App() {
                   </button>
                   <div className="text-right">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-modern-secondary">Última Atividade</p>
-                    <p className="text-xs font-bold text-modern-text">{selectedClient.lastPurchaseDate}</p>
+                    <p className="text-xs font-bold text-modern-text">{currentSelectedClient.lastPurchaseDate}</p>
                   </div>
                 </div>
 
                 <div className="mb-12">
-                  <h2 className="text-4xl font-extrabold tracking-tight text-modern-text mb-3 leading-tight">{selectedClient.nome}</h2>
+                  <h2 className="text-4xl font-extrabold tracking-tight text-modern-text mb-3 leading-tight">{currentSelectedClient.nome}</h2>
                   <div className="flex flex-wrap gap-4 text-xs font-bold text-modern-secondary">
-                    <p className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-none border border-modern-border"><Mail size={14} /> {selectedClient.email}</p>
-                    <p className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-none border border-modern-border"><Phone size={14} /> {selectedClient.telefone}</p>
+                    <p className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-none border border-modern-border"><Mail size={14} /> {currentSelectedClient.email}</p>
+                    <p className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-none border border-modern-border"><Phone size={14} /> {currentSelectedClient.telefone}</p>
                   </div>
                 </div>
 
@@ -1532,9 +1569,8 @@ export default function App() {
                   </div>
 
                   <div className="space-y-4">
-                    {manualSales.filter(s => s.clientKey === selectedClient.key).length > 0 ? (
-                      manualSales
-                        .filter(s => s.clientKey === selectedClient.key)
+                    {currentSelectedClient.manualSales && currentSelectedClient.manualSales.length > 0 ? (
+                      [...currentSelectedClient.manualSales]
                         .sort((a, b) => b.timestamp - a.timestamp)
                         .map(sale => (
                           <div key={sale.id} className="bg-slate-50 border border-modern-border p-5 flex items-center justify-between group/sale">
@@ -1584,7 +1620,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-8">
-                    {selectedClient.leads.map((lead) => (
+                    {currentSelectedClient.leads.map((lead) => (
                       <div key={lead.id} className="modern-card p-8 border-none shadow-sm bg-slate-50/50">
                         <div className="flex justify-between items-start mb-6">
                           <div>
@@ -1654,7 +1690,7 @@ export default function App() {
                               </div>
                               <div className="flex gap-4">
                                 <a 
-                                  href={`https://wa.me/${selectedClient.telefone.replace(/\D/g, '')}?text=${encodeURIComponent(generatedMessage)}`}
+                                  href={`https://wa.me/${currentSelectedClient.telefone.replace(/\D/g, '')}?text=${encodeURIComponent(generatedMessage)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="modern-button flex-1 flex items-center justify-center gap-3"
