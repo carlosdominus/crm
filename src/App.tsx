@@ -155,8 +155,10 @@ export default function App() {
     const manualTag = clientTags[client.key];
     if (manualTag) return manualTag;
 
-    // 2. Automatic 'Vendido' detection (if they have spent money)
-    if (client.totalSpent > 0) return 'vendido';
+    // 2. Automatic 'Vendido' detection (ONLY if they have MANUAL sales recorded)
+    // This ensures that approved leads from the spreadsheet still show "Enviar Msg"
+    // until a manual interaction/sale is logged.
+    if (client.manualSales && client.manualSales.length > 0) return 'vendido';
 
     // 3. Explicit 'Lixo' status in Spreadsheet
     if (client.status === 'Lixo' || client.leads.some(l => l.status === 'Lixo')) {
