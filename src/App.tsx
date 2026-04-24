@@ -297,25 +297,25 @@ export default function App() {
     if (!table || !top) return;
 
     const handleTableScroll = () => {
-      if (top.scrollLeft !== table.scrollLeft) {
+      if (Math.abs(top.scrollLeft - table.scrollLeft) > 1) {
         top.scrollLeft = table.scrollLeft;
       }
     };
 
     const handleTopScroll = () => {
-      if (table.scrollLeft !== top.scrollLeft) {
+      if (Math.abs(table.scrollLeft - top.scrollLeft) > 1) {
         table.scrollLeft = top.scrollLeft;
       }
     };
 
-    table.addEventListener('scroll', handleTableScroll);
-    top.addEventListener('scroll', handleTopScroll);
+    table.addEventListener('scroll', handleTableScroll, { passive: true });
+    top.addEventListener('scroll', handleTopScroll, { passive: true });
 
     return () => {
       table.removeEventListener('scroll', handleTableScroll);
       top.removeEventListener('scroll', handleTopScroll);
     };
-  }, [view, showUtms]);
+  }, [view, showUtms, manualSales]);
 
   useEffect(() => {
     if (!showUtms || view !== 'crm') return;
@@ -328,14 +328,19 @@ export default function App() {
       if (!dummy) return;
 
       const updateWidth = () => {
+        // Sync the dummy div's width with the table's scrollable width
         dummy.style.width = `${table.scrollWidth}px`;
       };
       
-      updateWidth();
+      // Delay slightly to ensure table is rendered
+      const timer = setTimeout(updateWidth, 100);
       const ro = new ResizeObserver(updateWidth);
       ro.observe(table);
       
-      return () => ro.disconnect();
+      return () => {
+        clearTimeout(timer);
+        ro.disconnect();
+      };
     }
   }, [showUtms, view, manualSales]);
   
@@ -1551,7 +1556,7 @@ export default function App() {
             {showUtms && (
               <div 
                 ref={topScrollRef}
-                className="overflow-x-auto custom-scrollbar h-3 bg-slate-50 border-b border-modern-border"
+                className="overflow-x-auto custom-scrollbar h-4 bg-slate-50 border-b border-modern-border sticky top-0 z-40"
               >
                 <div style={{ height: '1px' }} />
               </div>
@@ -1559,50 +1564,55 @@ export default function App() {
 
             <div 
               ref={salesTableRef}
-              className="overflow-x-auto custom-scrollbar"
+              className="overflow-x-auto custom-scrollbar relative"
             >
-              <table className="w-full text-left border-collapse min-w-full">
+              <table className="w-full text-left border-separate border-spacing-0 min-w-full">
                 <thead>
-                  <tr className="bg-white border-b border-modern-border">
+                  <tr className="bg-white">
                     <th className={cn(
-                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest",
-                      showUtms ? "px-2 w-[1%] whitespace-nowrap first:pl-8" : "px-8"
+                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky left-0 z-40 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-100",
+                      showUtms ? "top-4 w-[120px] min-w-[120px]" : "top-0 w-[150px]"
                     )}>Data</th>
                     <th className={cn(
-                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest",
-                      showUtms ? "px-2 w-[1%] whitespace-nowrap" : "px-8"
+                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky z-30 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-100",
+                      showUtms ? "top-4 left-[120px] w-[200px] min-w-[200px]" : "top-0"
                     )}>Produto</th>
                     <th className={cn(
-                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest",
-                      showUtms ? "px-2 w-[1%] whitespace-nowrap" : "px-8"
+                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky z-30 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-100",
+                      showUtms ? "top-4 left-[320px] w-[100px] min-w-[100px]" : "top-0"
                     )}>Valor</th>
                     
+                    <th className={cn(
+                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky z-30 border-b border-modern-border whitespace-nowrap px-4 shadow-[2px_0_0_0_rgba(0,0,0,0.05)]",
+                      showUtms ? "top-4 left-[420px] w-[180px] min-w-[180px]" : "top-0"
+                    )}>Cliente</th>
+                    
                     {!showUtms ? (
-                      <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest text-right">Comissão</th>
+                      <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest text-right border-b border-modern-border bg-white sticky top-0 z-20">Comissão</th>
                     ) : (
                       <>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Src</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Sck</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Source</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Medium</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Campaign</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Content</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Term</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter text-right whitespace-nowrap">TTCID</th>
+                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Src</th>
+                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Sck</th>
+                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Source</th>
+                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Medium</th>
+                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Campaign</th>
+                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Content</th>
+                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Term</th>
+                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter text-right whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">TTCID</th>
                       </>
                     )}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-modern-border">
+                <tbody className="bg-white">
                   {manualSales.sort((a, b) => b.timestamp - a.timestamp).map(sale => {
                     const client = enrichedClients.find(c => c.key === sale.clientKey);
-                    const lastLead = client?.leads[0]; // UTMs typically come from leads
+                    const lastLead = client?.leads[0];
                     
                     return (
-                      <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
+                      <tr key={sale.id} className="hover:bg-slate-50 transition-colors group">
                         <td className={cn(
-                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap",
-                          showUtms ? "px-2 text-[11px] first:pl-8 w-[1%]" : "px-8"
+                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap bg-white sticky left-0 z-10 border-b border-modern-border group-hover:bg-slate-50 px-4 border-r border-slate-100",
+                          showUtms ? "text-[11px]" : ""
                         )}>
                           {(() => {
                             const [year, month, day] = sale.date.split('-');
@@ -1610,30 +1620,37 @@ export default function App() {
                           })()}
                         </td>
                         <td className={cn(
-                          "py-5 text-sm font-medium text-modern-text whitespace-nowrap",
-                          showUtms ? "px-2 text-[11px] w-[1%]" : "px-8"
+                          "py-5 text-sm font-medium text-modern-text whitespace-nowrap bg-white sticky z-10 border-b border-modern-border group-hover:bg-slate-50 px-4 border-r border-slate-100",
+                          showUtms ? "left-[120px] text-[11px]" : ""
                         )}>{sale.productName}</td>
                         <td className={cn(
-                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap",
-                          showUtms ? "px-2 text-[11px] w-[1%]" : "px-8"
+                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap bg-white sticky z-10 border-b border-modern-border group-hover:bg-slate-50 px-4 border-r border-slate-100",
+                          showUtms ? "left-[320px] text-[11px]" : ""
                         )}>
                           {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
                         </td>
                         
+                        <td className={cn(
+                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap bg-white sticky z-10 border-b border-modern-border group-hover:bg-slate-50 shadow-[2px_0_0_0_rgba(0,0,0,0.05)] truncate px-4",
+                          showUtms ? "left-[420px] text-[11px] max-w-[180px]" : ""
+                        )}>
+                          {client?.nome || 'N/A'}
+                        </td>
+                        
                         {!showUtms ? (
-                          <td className="px-8 py-5 text-sm font-extrabold text-emerald-600 text-right whitespace-nowrap">
+                          <td className="px-8 py-5 text-sm font-extrabold text-emerald-600 text-right whitespace-nowrap border-b border-modern-border">
                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.commission)}
                           </td>
                         ) : (
                           <>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.src || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.sck || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_source || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_medium || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_campaign || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_content || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_term || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary text-right whitespace-nowrap">{lastLead?.ttcid || '-'}</td>
+                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.src || '-'}</td>
+                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.sck || '-'}</td>
+                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_source || '-'}</td>
+                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_medium || '-'}</td>
+                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_campaign || '-'}</td>
+                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_content || '-'}</td>
+                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_term || '-'}</td>
+                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary text-right whitespace-nowrap border-b border-modern-border">{lastLead?.ttcid || '-'}</td>
                           </>
                         )}
                       </tr>
@@ -1641,7 +1658,7 @@ export default function App() {
                   })}
                   {manualSales.length === 0 && (
                     <tr>
-                      <td colSpan={showUtms ? 11 : 4} className="px-8 py-20 text-center text-sm font-bold text-modern-secondary uppercase tracking-widest">
+                      <td colSpan={showUtms ? 12 : 5} className="px-8 py-20 text-center text-sm font-bold text-modern-secondary uppercase tracking-widest border-b border-modern-border">
                         Nenhuma venda registrada ainda
                       </td>
                     </tr>
