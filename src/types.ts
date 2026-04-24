@@ -70,6 +70,13 @@ export interface Workspace {
   ownerId: string;
   ownerEmail: string;
   collaborators: string[];
+  collaboratorEmails?: Record<string, string>;
+}
+
+export interface UserMeta {
+  uid: string;
+  email: string;
+  displayName?: string;
 }
 
 export interface Invitation {

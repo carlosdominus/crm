@@ -159,6 +159,7 @@ export default function App() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [isInviting, setIsInviting] = useState(false);
   const [currentWorkspaceCollaborators, setCurrentWorkspaceCollaborators] = useState<string[]>([]);
+  const [collabEmailsMap, setCollabEmailsMap] = useState<Record<string, string>>({});
 
   const getClientTag = (client: Client) => {
     // 1. Manual tag from Firestore (highest priority)
@@ -205,6 +206,13 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
+    // 0. Update users_meta
+    setDoc(doc(db, 'users_meta', user.uid), {
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName || user.email?.split('@')[0]
+    });
+
     // 1. Listen for user's own workspace and collaborators
     const unsubWorkspace = onSnapshot(doc(db, 'workspaces', user.uid), (snapshot) => {
       if (!snapshot.exists()) {
@@ -212,11 +220,13 @@ export default function App() {
         setDoc(doc(db, 'workspaces', user.uid), {
           ownerId: user.uid,
           ownerEmail: user.email,
-          collaborators: []
+          collaborators: [],
+          collaboratorEmails: {}
         });
       } else {
         const data = snapshot.data() as Workspace;
         setCurrentWorkspaceCollaborators(data.collaborators);
+        setCollabEmailsMap(data.collaboratorEmails || {});
       }
     });
 
@@ -521,12 +531,18 @@ export default function App() {
       const workspaceSnap = await getDocFromServer(workspaceRef);
       if (workspaceSnap.exists()) {
         const data = workspaceSnap.data() as Workspace;
-        if (!data.collaborators.includes(user.uid)) {
-          await setDoc(workspaceRef, {
-            ...data,
-            collaborators: [...data.collaborators, user.uid]
-          });
-        }
+        const newCollaborators = data.collaborators.includes(user.uid) 
+          ? data.collaborators 
+          : [...data.collaborators, user.uid];
+        
+        await setDoc(workspaceRef, {
+          ...data,
+          collaborators: newCollaborators,
+          collaboratorEmails: {
+            ...(data.collaboratorEmails || {}),
+            [user.uid]: user.email || ""
+          }
+        });
       }
       await deleteDoc(doc(db, 'invitations', invite.id!));
       setActiveWorkspace({ id: invite.senderId, email: invite.senderEmail });
@@ -539,12 +555,19 @@ export default function App() {
     if (!user) return;
     try {
       const workspaceRef = doc(db, 'workspaces', user.uid);
-      const updated = currentWorkspaceCollaborators.filter(id => id !== collabUid);
-      await setDoc(workspaceRef, {
-        ownerId: user.uid,
-        ownerEmail: user.email,
-        collaborators: updated
-      });
+      const workspaceSnap = await getDocFromServer(workspaceRef);
+      if (workspaceSnap.exists()) {
+        const data = workspaceSnap.data() as Workspace;
+        const updatedCollabs = data.collaborators.filter(id => id !== collabUid);
+        const updatedEmails = { ...(data.collaboratorEmails || {}) };
+        delete updatedEmails[collabUid];
+        
+        await setDoc(workspaceRef, {
+          ...data,
+          collaborators: updatedCollabs,
+          collaboratorEmails: updatedEmails
+        });
+      }
     } catch (error) {
       console.error("Erro ao remover colaborador:", error);
     }
@@ -1116,6 +1139,18 @@ export default function App() {
                 <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary">Minha Comissão</p>
                 <p className="text-sm font-bold text-emerald-600">
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.totalCommission)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary">Vendas Manuais</p>
+                <p className="text-sm font-bold text-modern-text">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.manualRevenue)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary">Total Planilha</p>
+                <p className="text-sm font-bold text-modern-text">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.totalRevenue)}
                 </p>
               </div>
             </div>
@@ -1842,9 +1877,9 @@ export default function App() {
                         <div key={id} className="flex items-center justify-between p-4 border border-modern-border bg-slate-50 shadow-sm">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-modern-primary/10 flex items-center justify-center text-modern-primary font-bold text-[10px]">
-                              {id.charAt(0)}
+                              {(collabEmailsMap[id] || id).charAt(0).toUpperCase()}
                             </div>
-                            <p className="text-xs font-bold text-modern-text truncate max-w-[200px]">{id}</p>
+                            <p className="text-xs font-bold text-modern-text truncate max-w-[200px]">{collabEmailsMap[id] || id}</p>
                           </div>
                           <button 
                             onClick={() => handleRemoveCollaborator(id)}
