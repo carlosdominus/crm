@@ -41,24 +41,20 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  @apply bg-slate-400 rounded-none;
+  @apply bg-slate-200 rounded-none;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-500;
-}
-
-.hide-scrollbar-vertical {
-  overflow-y: hidden !important;
+  @apply bg-slate-300;
 }
 
 .status-dot {
