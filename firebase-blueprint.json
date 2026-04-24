@@ -26,9 +26,44 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "clientKey", "productName", "value", "commission", "date", "timestamp"]
+    },
+    "Workspace": {
+      "title": "Workspace Management",
+      "description": "Configuration for shared access to a user's data",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "collaborators": { 
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["ownerId", "ownerEmail", "collaborators"]
+    },
+    "Invitation": {
+      "title": "Collaborator Invitation",
+      "description": "Pending team invitations",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "senderId", "senderEmail", "status", "createdAt"]
     }
   },
   "firestore": {
+    "/workspaces/{ownerId}": {
+      "schema": "Workspace",
+      "description": "Workspace access control list"
+    },
+    "/invitations/{inviteId}": {
+      "schema": "Invitation",
+      "description": "Pending invitations indexed by unique ID"
+    },
     "/users/{userId}/tags/{clientKey}": {
       "schema": "UserTag",
       "description": "Client tags for a specific user"

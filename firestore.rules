@@ -37,6 +37,16 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isCollaborator(ownerId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/workspaces/$(ownerId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/workspaces/$(ownerId)).data.collaborators;
+    }
+
+    function hasAccess(ownerId) {
+      return isOwner(ownerId) || isCollaborator(ownerId);
+    }
+
     function hasOnlyAllowedFields(fields) {
       return request.resource.data.keys().hasOnly(fields);
     }
@@ -69,19 +79,36 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
+    match /workspaces/{ownerId} {
+      allow read: if isAuthenticated() && (isOwner(ownerId) || request.auth.uid in resource.data.collaborators);
+      allow create: if isOwner(ownerId);
+      allow update: if isOwner(ownerId);
+      allow delete: if isOwner(ownerId);
+    }
+
+    match /invitations/{inviteId} {
+      allow read: if isAuthenticated() && (request.auth.token.email == resource.data.email || request.auth.uid == resource.data.senderId);
+      allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid && request.resource.data.status == "pending";
+      allow update: if isAuthenticated() && (
+        (request.auth.token.email == resource.data.email && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])) ||
+        (request.auth.uid == resource.data.senderId)
+      );
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.senderId || request.auth.token.email == resource.data.email);
+    }
+
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if hasAccess(userId);
 
       match /tags/{clientKey} {
-        allow read: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidTag(request.resource.data);
-        allow delete: if isOwner(userId);
+        allow read: if hasAccess(userId);
+        allow create, update: if hasAccess(userId) && isValidTag(request.resource.data);
+        allow delete: if hasAccess(userId);
       }
 
       match /sales/{saleId} {
-        allow read: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidSale(request.resource.data);
-        allow delete: if isOwner(userId);
+        allow read: if hasAccess(userId);
+        allow create, update: if hasAccess(userId) && isValidSale(request.resource.data);
+        allow delete: if hasAccess(userId);
       }
     }
   }

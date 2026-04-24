@@ -65,3 +65,18 @@ export const STATUS_THEMES: Record<string, { bg: string; text: string }> = {
   "Expirado": { bg: "bg-orange-600", text: "text-white" },
   "Lixo": { bg: "bg-rose-100", text: "text-rose-600" },
 };
+
+export interface Workspace {
+  ownerId: string;
+  ownerEmail: string;
+  collaborators: string[];
+}
+
+export interface Invitation {
+  id?: string;
+  email: string;
+  senderId: string;
+  senderEmail: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+}
