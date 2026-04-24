@@ -252,6 +252,8 @@ export default function App() {
   // Pagination state
   const [visibleCount, setVisibleCount] = useState(50);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const salesTableRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
   
   // Manual Sales state
   const [manualSales, setManualSales] = useState<ManualSale[]>([]);
@@ -288,6 +290,54 @@ export default function App() {
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [showOnlyManualSales, setShowOnlyManualSales] = useState(false);
   const [showUtms, setShowUtms] = useState(false);
+
+  useEffect(() => {
+    const table = salesTableRef.current;
+    const top = topScrollRef.current;
+    if (!table || !top) return;
+
+    const handleTableScroll = () => {
+      if (top.scrollLeft !== table.scrollLeft) {
+        top.scrollLeft = table.scrollLeft;
+      }
+    };
+
+    const handleTopScroll = () => {
+      if (table.scrollLeft !== top.scrollLeft) {
+        table.scrollLeft = top.scrollLeft;
+      }
+    };
+
+    table.addEventListener('scroll', handleTableScroll);
+    top.addEventListener('scroll', handleTopScroll);
+
+    return () => {
+      table.removeEventListener('scroll', handleTableScroll);
+      top.removeEventListener('scroll', handleTopScroll);
+    };
+  }, [view, showUtms]);
+
+  useEffect(() => {
+    if (!showUtms || view !== 'crm') return;
+    
+    const table = salesTableRef.current;
+    const top = topScrollRef.current;
+    
+    if (table && top) {
+      const dummy = top.firstElementChild as HTMLElement;
+      if (!dummy) return;
+
+      const updateWidth = () => {
+        dummy.style.width = `${table.scrollWidth}px`;
+      };
+      
+      updateWidth();
+      const ro = new ResizeObserver(updateWidth);
+      ro.observe(table);
+      
+      return () => ro.disconnect();
+    }
+  }, [showUtms, view, manualSales]);
   
   // Tagging state
   const [clientTags, setClientTags] = useState<Record<string, 'pendente' | 'vendido' | 'lixo' | null>>({});
@@ -1007,7 +1057,7 @@ export default function App() {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-3 w-80 bg-white border border-modern-border rounded-none shadow-2xl z-20 overflow-hidden p-4 space-y-6"
+                      className="absolute right-0 mt-3 w-80 bg-white border border-modern-border rounded-none shadow-2xl z-40 overflow-hidden p-4 space-y-6"
                     >
                       {/* Período */}
                       <div className="space-y-2">
@@ -1480,7 +1530,7 @@ export default function App() {
               <h3 className="text-xs font-extrabold uppercase tracking-widest text-modern-text">Histórico de Vendas Manuais</h3>
               
               <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-modern-secondary">{showUtms ? 'Ver Comissão' : 'Ver UTMs'}</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-modern-secondary">{showUtms ? 'Ver UTMs' : 'Ver Comissão'}</span>
                 <button 
                   onClick={() => setShowUtms(!showUtms)}
                   className={cn(
@@ -1496,7 +1546,21 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <div className="overflow-x-auto custom-scrollbar">
+
+            {/* Top Scrollbar for UTM view */}
+            {showUtms && (
+              <div 
+                ref={topScrollRef}
+                className="overflow-x-auto custom-scrollbar h-2 bg-slate-50 border-b border-modern-border"
+              >
+                <div style={{ height: '1px' }} />
+              </div>
+            )}
+
+            <div 
+              ref={salesTableRef}
+              className="overflow-x-auto custom-scrollbar"
+            >
               <table className="w-full text-left border-collapse min-w-full">
                 <thead>
                   <tr className="bg-white border-b border-modern-border">
