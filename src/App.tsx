@@ -315,10 +315,10 @@ export default function App() {
       table.removeEventListener('scroll', handleTableScroll);
       top.removeEventListener('scroll', handleTopScroll);
     };
-  }, [view, showUtms, manualSales]);
+  }, [view, manualSales]);
 
   useEffect(() => {
-    if (!showUtms || view !== 'crm') return;
+    if (view !== 'crm') return;
     
     const table = salesTableRef.current;
     const top = topScrollRef.current;
@@ -328,11 +328,13 @@ export default function App() {
       if (!dummy) return;
 
       const updateWidth = () => {
-        // Sync the dummy div's width with the table's scrollable width
-        dummy.style.width = `${table.scrollWidth}px`;
+        // Find the actual table element to get its full rendered width
+        const tableEl = table.querySelector('table');
+        if (tableEl && dummy) {
+          dummy.style.width = `${tableEl.scrollWidth}px`;
+        }
       };
       
-      // Delay slightly to ensure table is rendered
       const timer = setTimeout(updateWidth, 100);
       const ro = new ResizeObserver(updateWidth);
       ro.observe(table);
@@ -342,7 +344,7 @@ export default function App() {
         ro.disconnect();
       };
     }
-  }, [showUtms, view, manualSales]);
+  }, [view, manualSales, showUtms]);
   
   // Tagging state
   const [clientTags, setClientTags] = useState<Record<string, 'pendente' | 'vendido' | 'lixo' | null>>({});
@@ -948,7 +950,7 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header - Simple Style */}
-        <header className="h-20 px-10 glass-header flex items-center justify-between shrink-0 z-10">
+        <header className="h-20 px-10 glass-header flex items-center justify-between shrink-0 z-[100]">
           <div className="flex items-center gap-6">
             <div className="w-10 h-10 bg-modern-primary rounded-none flex items-center justify-center text-white shadow-lg shadow-modern-primary/20">
               <Package size={20} />
@@ -1038,32 +1040,32 @@ export default function App() {
             />
           </div>
 
-                      <div className="relative z-[60]">
-                        <button 
-                          onClick={() => setShowFilterMenu(!showFilterMenu)}
-                          className="flex items-center gap-3 bg-white border border-modern-border rounded-none px-5 py-3 shadow-sm hover:bg-slate-50 transition-colors text-sm font-bold text-modern-text"
-                        >
-                          <Filter size={18} className="text-modern-secondary" />
-                          <span>Filtros</span>
-                          <ChevronDown size={16} className={cn("text-modern-secondary transition-transform", showFilterMenu && "rotate-180")} />
-                        </button>
+                        <div className="relative z-[150]">
+                          <button 
+                            onClick={() => setShowFilterMenu(!showFilterMenu)}
+                            className="flex items-center gap-3 bg-white border border-modern-border rounded-none px-5 py-3 shadow-sm hover:bg-slate-50 transition-colors text-sm font-bold text-modern-text"
+                          >
+                            <Filter size={18} className="text-modern-secondary" />
+                            <span>Filtros</span>
+                            <ChevronDown size={16} className={cn("text-modern-secondary transition-transform", showFilterMenu && "rotate-180")} />
+                          </button>
 
-                        <AnimatePresence>
-                          {showFilterMenu && (
-                            <>
-                              <motion.div 
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                onClick={() => setShowFilterMenu(false)}
-                                className="fixed inset-0 z-[65]"
-                              />
-                              <motion.div 
-                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                className="absolute right-0 mt-3 w-80 bg-white border border-modern-border rounded-none shadow-2xl z-[70] overflow-hidden p-4 space-y-6"
-                              >
+                          <AnimatePresence>
+                            {showFilterMenu && (
+                              <>
+                                <motion.div 
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  exit={{ opacity: 0 }}
+                                  onClick={() => setShowFilterMenu(false)}
+                                  className="fixed inset-0 z-[160]"
+                                />
+                                <motion.div 
+                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                  className="absolute right-0 top-full mt-3 w-80 bg-white border border-modern-border rounded-none shadow-2xl z-[170] overflow-hidden p-4 space-y-6"
+                                >
                       {/* Período */}
                       <div className="space-y-2">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-modern-secondary px-1">Período</p>
@@ -1529,8 +1531,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Recent Sales Table */}
-          <div className="bg-white border border-modern-border shadow-sm overflow-hidden">
+            {/* Recent Sales Table */}
+          <div className="bg-white border border-modern-border shadow-sm">
             <div className="p-8 border-b border-modern-border bg-slate-50/50 flex items-center justify-between">
               <h3 className="text-xs font-extrabold uppercase tracking-widest text-modern-text">Histórico de Vendas Manuais</h3>
               
@@ -1552,119 +1554,121 @@ export default function App() {
               </div>
             </div>
 
-            {/* Top Scrollbar for UTM view */}
-            {showUtms && (
+            <div className="relative">
+              {/* Top Scrollbar for Horizontal Navigation */}
               <div 
                 ref={topScrollRef}
-                className="overflow-x-auto custom-scrollbar h-4 bg-slate-50 border-b border-modern-border sticky top-0 z-40"
+                className="overflow-x-auto custom-scrollbar h-5 bg-slate-100 border-b border-modern-border sticky top-0 z-[100] hide-scrollbar-vertical"
+                style={{ scrollbarWidth: 'auto' }}
               >
-                <div style={{ height: '1px' }} />
+                {/* The inner div's width is set dynamically in the useEffect to match the table's scrollWidth */}
+                <div className="h-[1px]" />
               </div>
-            )}
 
-            <div 
-              ref={salesTableRef}
-              className="overflow-x-auto custom-scrollbar relative"
-            >
-              <table className="w-full text-left border-separate border-spacing-0 min-w-full">
-                <thead>
-                  <tr className="bg-white">
-                    <th className={cn(
-                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky left-0 z-40 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-100",
-                      showUtms ? "top-4 w-[120px] min-w-[120px]" : "top-0 w-[150px]"
-                    )}>Data</th>
-                    <th className={cn(
-                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky z-30 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-100",
-                      showUtms ? "top-4 left-[120px] w-[200px] min-w-[200px]" : "top-0"
-                    )}>Produto</th>
-                    <th className={cn(
-                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky z-30 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-100",
-                      showUtms ? "top-4 left-[320px] w-[100px] min-w-[100px]" : "top-0"
-                    )}>Valor</th>
-                    
-                    <th className={cn(
-                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky z-30 border-b border-modern-border whitespace-nowrap px-4 shadow-[2px_0_0_0_rgba(0,0,0,0.05)]",
-                      showUtms ? "top-4 left-[420px] w-[180px] min-w-[180px]" : "top-0"
-                    )}>Cliente</th>
-                    
-                    {!showUtms ? (
-                      <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest text-right border-b border-modern-border bg-white sticky top-0 z-20">Comissão</th>
-                    ) : (
-                      <>
-                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Src</th>
-                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Sck</th>
-                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Source</th>
-                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Medium</th>
-                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Campaign</th>
-                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Content</th>
-                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">Term</th>
-                        <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter text-right whitespace-nowrap border-b border-modern-border bg-white sticky top-4 z-20">TTCID</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="bg-white">
-                  {manualSales.sort((a, b) => b.timestamp - a.timestamp).map(sale => {
-                    const client = enrichedClients.find(c => c.key === sale.clientKey);
-                    const lastLead = client?.leads[0];
-                    
-                    return (
-                      <tr key={sale.id} className="hover:bg-slate-50 transition-colors group">
-                        <td className={cn(
-                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap bg-white sticky left-0 z-10 border-b border-modern-border group-hover:bg-slate-50 px-4 border-r border-slate-100",
-                          showUtms ? "text-[11px]" : ""
-                        )}>
-                          {(() => {
-                            const [year, month, day] = sale.date.split('-');
-                            return `${day}/${month}/${year}`;
-                          })()}
-                        </td>
-                        <td className={cn(
-                          "py-5 text-sm font-medium text-modern-text whitespace-nowrap bg-white sticky z-10 border-b border-modern-border group-hover:bg-slate-50 px-4 border-r border-slate-100",
-                          showUtms ? "left-[120px] text-[11px]" : ""
-                        )}>{sale.productName}</td>
-                        <td className={cn(
-                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap bg-white sticky z-10 border-b border-modern-border group-hover:bg-slate-50 px-4 border-r border-slate-100",
-                          showUtms ? "left-[320px] text-[11px]" : ""
-                        )}>
-                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
-                        </td>
-                        
-                        <td className={cn(
-                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap bg-white sticky z-10 border-b border-modern-border group-hover:bg-slate-50 shadow-[2px_0_0_0_rgba(0,0,0,0.05)] truncate px-4",
-                          showUtms ? "left-[420px] text-[11px] max-w-[180px]" : ""
-                        )}>
-                          {client?.nome || 'N/A'}
-                        </td>
-                        
-                        {!showUtms ? (
-                          <td className="px-8 py-5 text-sm font-extrabold text-emerald-600 text-right whitespace-nowrap border-b border-modern-border">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.commission)}
-                          </td>
-                        ) : (
-                          <>
-                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.src || '-'}</td>
-                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.sck || '-'}</td>
-                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_source || '-'}</td>
-                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_medium || '-'}</td>
-                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_campaign || '-'}</td>
-                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_content || '-'}</td>
-                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_term || '-'}</td>
-                            <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary text-right whitespace-nowrap border-b border-modern-border">{lastLead?.ttcid || '-'}</td>
-                          </>
-                        )}
-                      </tr>
-                    );
-                  })}
-                  {manualSales.length === 0 && (
-                    <tr>
-                      <td colSpan={showUtms ? 12 : 5} className="px-8 py-20 text-center text-sm font-bold text-modern-secondary uppercase tracking-widest border-b border-modern-border">
-                        Nenhuma venda registrada ainda
-                      </td>
+              <div 
+                ref={salesTableRef}
+                className="overflow-x-auto custom-scrollbar relative bg-white"
+              >
+                <table className="w-full text-left border-separate border-spacing-0 min-w-full table-fixed">
+                  <thead>
+                    <tr className="bg-white">
+                      <th className={cn(
+                        "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky left-0 z-50 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-200",
+                        "top-5 w-[120px] min-w-[120px]"
+                      )}>Data</th>
+                      <th className={cn(
+                        "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky z-50 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-200",
+                        "top-5 left-[120px] w-[180px] min-w-[180px]"
+                      )}>Produto</th>
+                      <th className={cn(
+                        "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky z-50 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-200",
+                        "top-5 left-[300px] w-[100px] min-w-[100px]"
+                      )}>Valor</th>
+                      
+                      <th className={cn(
+                        "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest bg-white sticky z-50 border-b border-modern-border whitespace-nowrap px-4 border-r border-slate-200 shadow-[5px_0_15px_rgba(0,0,0,0.1)]",
+                        "top-5 left-[400px] w-[200px] min-w-[200px]"
+                      )}>Cliente</th>
+                      
+                      {!showUtms ? (
+                        <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest text-right border-b border-modern-border bg-white sticky top-5 z-40">Comissão</th>
+                      ) : (
+                        <>
+                          <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-5 z-40">Src</th>
+                          <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-5 z-40">Sck</th>
+                          <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-5 z-40">Source</th>
+                          <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-5 z-40">Medium</th>
+                          <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-5 z-40">Campaign</th>
+                          <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-5 z-40">Content</th>
+                          <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap border-b border-modern-border bg-white sticky top-5 z-40">Term</th>
+                          <th className="px-6 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter text-right whitespace-nowrap border-b border-modern-border bg-white sticky top-5 z-40">TTCID</th>
+                        </>
+                      )}
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white">
+                    {manualSales.sort((a, b) => b.timestamp - a.timestamp).map(sale => {
+                      const client = enrichedClients.find(c => c.key === sale.clientKey);
+                      const lastLead = client?.leads[0];
+                      
+                      return (
+                        <tr key={sale.id} className="hover:bg-slate-50 transition-colors group">
+                          <td className={cn(
+                            "py-5 text-sm font-bold text-modern-text whitespace-nowrap bg-white sticky left-0 z-30 border-b border-modern-border group-hover:bg-slate-50 px-4 border-r border-slate-200",
+                            "text-[11px]"
+                          )}>
+                            {(() => {
+                              const [year, month, day] = sale.date.split('-');
+                              return `${day}/${month}/${year}`;
+                            })()}
+                          </td>
+                          <td className={cn(
+                            "py-5 text-sm font-medium text-modern-text whitespace-nowrap bg-white sticky z-30 border-b border-modern-border group-hover:bg-slate-50 px-4 border-r border-slate-200",
+                            "left-[120px] text-[11px]"
+                          )}>{sale.productName}</td>
+                          <td className={cn(
+                            "py-5 text-sm font-bold text-modern-text whitespace-nowrap bg-white sticky z-30 border-b border-modern-border group-hover:bg-slate-50 px-4 border-r border-slate-200",
+                            "left-[300px] text-[11px]"
+                          )}>
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
+                          </td>
+                          
+                          <td className={cn(
+                            "py-5 text-sm font-bold text-modern-text whitespace-nowrap bg-white sticky z-30 border-b border-modern-border group-hover:bg-slate-50 shadow-[5px_0_15px_rgba(0,0,0,0.1)] truncate px-4 border-r border-slate-200",
+                            "left-[400px] text-[11px] max-w-[200px]"
+                          )}>
+                            {client?.nome || 'N/A'}
+                          </td>
+                          
+                          {!showUtms ? (
+                            <td className="px-8 py-5 text-sm font-extrabold text-emerald-600 text-right whitespace-nowrap border-b border-modern-border">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.commission)}
+                            </td>
+                          ) : (
+                            <>
+                              <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.src || '-'}</td>
+                              <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.sck || '-'}</td>
+                              <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_source || '-'}</td>
+                              <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_medium || '-'}</td>
+                              <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_campaign || '-'}</td>
+                              <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_content || '-'}</td>
+                              <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap border-b border-modern-border">{lastLead?.utm_term || '-'}</td>
+                              <td className="px-6 py-5 text-[10px] font-medium text-modern-secondary text-right whitespace-nowrap border-b border-modern-border">{lastLead?.ttcid || '-'}</td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })}
+                    {manualSales.length === 0 && (
+                      <tr>
+                        <td colSpan={showUtms ? 12 : 5} className="px-8 py-20 text-center text-sm font-bold text-modern-secondary uppercase tracking-widest border-b border-modern-border">
+                          Nenhuma venda registrada ainda
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
