@@ -287,6 +287,7 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [showOnlyManualSales, setShowOnlyManualSales] = useState(false);
+  const [showUtms, setShowUtms] = useState(false);
   
   // Tagging state
   const [clientTags, setClientTags] = useState<Record<string, 'pendente' | 'vendido' | 'lixo' | null>>({});
@@ -596,7 +597,16 @@ export default function App() {
               timestamp,
               numericValue: isNaN(leadValue) ? 0 : leadValue,
               paymentMethod: paymentMethodKey ? PAYMENT_METHODS[row[paymentMethodKey]?.toString()] || 'Desconhecido' : undefined,
-              rowNumber: index + 2
+              rowNumber: index + 2,
+              // UTM Mapping
+              src: (row['src'] || '').trim(),
+              sck: (row['sck'] || '').trim(),
+              utm_source: (row['utm_source'] || '').trim(),
+              utm_medium: (row['utm_medium'] || '').trim(),
+              utm_campaign: (row['utm_campaign'] || '').trim(),
+              utm_content: (row['utm_content'] || '').trim(),
+              utm_term: (row['utm_term'] || '').trim(),
+              ttcid: (row['ttcid'] || '').trim()
             };
           });
 
@@ -1468,38 +1478,106 @@ export default function App() {
           <div className="bg-white border border-modern-border shadow-sm overflow-hidden">
             <div className="p-8 border-b border-modern-border bg-slate-50/50 flex items-center justify-between">
               <h3 className="text-xs font-extrabold uppercase tracking-widest text-modern-text">Histórico de Vendas Manuais</h3>
+              
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-modern-secondary">{showUtms ? 'Ver UTMs' : 'Ver Comissão'}</span>
+                <button 
+                  onClick={() => setShowUtms(!showUtms)}
+                  className={cn(
+                    "w-10 h-5 rounded-full relative transition-colors duration-200 focus:outline-none",
+                    showUtms ? "bg-modern-primary" : "bg-slate-200"
+                  )}
+                >
+                  <motion.div 
+                    animate={{ x: showUtms ? 20 : 2 }}
+                    className="absolute top-1 left-0 w-3 h-3 bg-white rounded-full shadow-sm"
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  />
+                </button>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left border-collapse min-w-full">
                 <thead>
                   <tr className="bg-white border-b border-modern-border">
-                    <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest">Data</th>
-                    <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest">Produto</th>
-                    <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest">Valor</th>
-                    <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest text-right">Comissão</th>
+                    <th className={cn(
+                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest",
+                      showUtms ? "px-2 w-[1%] whitespace-nowrap first:pl-8" : "px-8"
+                    )}>Data</th>
+                    <th className={cn(
+                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest",
+                      showUtms ? "px-2 w-[1%] whitespace-nowrap" : "px-8"
+                    )}>Produto</th>
+                    <th className={cn(
+                      "py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest",
+                      showUtms ? "px-2 w-[1%] whitespace-nowrap" : "px-8"
+                    )}>Valor</th>
+                    
+                    {!showUtms ? (
+                      <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest text-right">Comissão</th>
+                    ) : (
+                      <>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Src</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Sck</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Source</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Medium</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Campaign</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Content</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Term</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter text-right">TTCID</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-modern-border">
-                  {manualSales.sort((a, b) => b.timestamp - a.timestamp).map(sale => (
-                    <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-8 py-5 text-sm font-bold text-modern-text">
-                        {(() => {
-                          const [year, month, day] = sale.date.split('-');
-                          return `${day}/${month}/${year}`;
-                        })()}
-                      </td>
-                      <td className="px-8 py-5 text-sm font-medium text-modern-text">{sale.productName}</td>
-                      <td className="px-8 py-5 text-sm font-bold text-modern-text">
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
-                      </td>
-                      <td className="px-8 py-5 text-sm font-extrabold text-emerald-600 text-right">
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.commission)}
-                      </td>
-                    </tr>
-                  ))}
+                  {manualSales.sort((a, b) => b.timestamp - a.timestamp).map(sale => {
+                    const client = enrichedClients.find(c => c.key === sale.clientKey);
+                    const lastLead = client?.leads[0]; // UTMs typically come from leads
+                    
+                    return (
+                      <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
+                        <td className={cn(
+                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap",
+                          showUtms ? "px-2 text-[11px] first:pl-8 w-[1%]" : "px-8"
+                        )}>
+                          {(() => {
+                            const [year, month, day] = sale.date.split('-');
+                            return `${day}/${month}/${year}`;
+                          })()}
+                        </td>
+                        <td className={cn(
+                          "py-5 text-sm font-medium text-modern-text whitespace-nowrap",
+                          showUtms ? "px-2 text-[11px] w-[1%]" : "px-8"
+                        )}>{sale.productName}</td>
+                        <td className={cn(
+                          "py-5 text-sm font-bold text-modern-text whitespace-nowrap",
+                          showUtms ? "px-2 text-[11px] w-[1%]" : "px-8"
+                        )}>
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.value)}
+                        </td>
+                        
+                        {!showUtms ? (
+                          <td className="px-8 py-5 text-sm font-extrabold text-emerald-600 text-right whitespace-nowrap">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.commission)}
+                          </td>
+                        ) : (
+                          <>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.src || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.sck || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_source || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_medium || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_campaign || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_content || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_term || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary text-right truncate max-w-[100px]">{lastLead?.ttcid || '-'}</td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
                   {manualSales.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-8 py-20 text-center text-sm font-bold text-modern-secondary uppercase tracking-widest">
+                      <td colSpan={showUtms ? 11 : 4} className="px-8 py-20 text-center text-sm font-bold text-modern-secondary uppercase tracking-widest">
                         Nenhuma venda registrada ainda
                       </td>
                     </tr>
