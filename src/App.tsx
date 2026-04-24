@@ -1480,7 +1480,7 @@ export default function App() {
               <h3 className="text-xs font-extrabold uppercase tracking-widest text-modern-text">Histórico de Vendas Manuais</h3>
               
               <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-modern-secondary">{showUtms ? 'Ver UTMs' : 'Ver Comissão'}</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-modern-secondary">{showUtms ? 'Ver Comissão' : 'Ver UTMs'}</span>
                 <button 
                   onClick={() => setShowUtms(!showUtms)}
                   className={cn(
@@ -1517,14 +1517,14 @@ export default function App() {
                       <th className="px-8 py-5 text-[11px] font-extrabold text-modern-secondary uppercase tracking-widest text-right">Comissão</th>
                     ) : (
                       <>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Src</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Sck</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Source</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Medium</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Campaign</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Content</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter">Term</th>
-                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter text-right">TTCID</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Src</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Sck</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Source</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Medium</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Campaign</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Content</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter whitespace-nowrap">Term</th>
+                        <th className="px-4 py-5 text-[10px] font-extrabold text-modern-secondary uppercase tracking-tighter text-right whitespace-nowrap">TTCID</th>
                       </>
                     )}
                   </tr>
@@ -1562,14 +1562,14 @@ export default function App() {
                           </td>
                         ) : (
                           <>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.src || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.sck || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_source || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_medium || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_campaign || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_content || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary truncate max-w-[100px]">{lastLead?.utm_term || '-'}</td>
-                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary text-right truncate max-w-[100px]">{lastLead?.ttcid || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.src || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.sck || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_source || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_medium || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_campaign || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_content || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary whitespace-nowrap">{lastLead?.utm_term || '-'}</td>
+                            <td className="px-4 py-5 text-[10px] font-medium text-modern-secondary text-right whitespace-nowrap">{lastLead?.ttcid || '-'}</td>
                           </>
                         )}
                       </tr>
