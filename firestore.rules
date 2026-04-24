@@ -79,18 +79,10 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
-    match /users_meta/{userId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isOwner(userId);
-    }
-
     match /workspaces/{ownerId} {
       allow read: if isAuthenticated() && (isOwner(ownerId) || request.auth.uid in resource.data.collaborators);
       allow create: if isOwner(ownerId);
-      allow update: if isOwner(ownerId) || (
-        isAuthenticated() && 
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['collaborators', 'collaboratorEmails'])
-      );
+      allow update: if isOwner(ownerId);
       allow delete: if isOwner(ownerId);
     }
 

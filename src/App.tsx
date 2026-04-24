@@ -44,13 +44,12 @@ import {
   onSnapshot, 
   query, 
   orderBy,
-  getDocFromServer,
   User,
   handleFirestoreError,
   OperationType
 } from './firebase';
 
-import { Lead, Client, STATUS_THEMES, ManualSale, Workspace, Invitation } from './types';
+import { Lead, Client, STATUS_THEMES, ManualSale } from './types';
 import { cn } from './lib/utils';
 import { generatePersonalizedMessage } from './services/gemini';
 import { 
@@ -150,16 +149,6 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem('crm_webhook_url') || "");
   const [view, setView] = useState<'crm' | 'dashboard'>('crm');
-  
-  // Workspace and Collaboration state
-  const [activeWorkspace, setActiveWorkspace] = useState<{ id: string; email: string } | null>(null);
-  const [availableWorkspaces, setAvailableWorkspaces] = useState<{ id: string; email: string }[]>([]);
-  const [pendingInvitations, setPendingInvitations] = useState<Invitation[]>([]);
-  const [showCollabModal, setShowCollabModal] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [isInviting, setIsInviting] = useState(false);
-  const [currentWorkspaceCollaborators, setCurrentWorkspaceCollaborators] = useState<string[]>([]);
-  const [collabEmailsMap, setCollabEmailsMap] = useState<Record<string, string>>({});
 
   const getClientTag = (client: Client) => {
     // 1. Manual tag from Firestore (highest priority)
@@ -191,75 +180,10 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (u) {
-        // Initialize default workspace
-        setActiveWorkspace({ id: u.uid, email: u.email || "" });
-      } else {
-        setActiveWorkspace(null);
-      }
       setAuthReady(true);
     });
     return () => unsubscribe();
   }, []);
-
-  // Listen for available workspaces and invitations
-  useEffect(() => {
-    if (!user) return;
-
-    // 0. Update users_meta
-    setDoc(doc(db, 'users_meta', user.uid), {
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName || user.email?.split('@')[0]
-    });
-
-    // 1. Listen for user's own workspace and collaborators
-    const unsubWorkspace = onSnapshot(doc(db, 'workspaces', user.uid), (snapshot) => {
-      if (!snapshot.exists()) {
-        // Create workspace if it doesn't exist
-        setDoc(doc(db, 'workspaces', user.uid), {
-          ownerId: user.uid,
-          ownerEmail: user.email,
-          collaborators: [],
-          collaboratorEmails: {}
-        });
-      } else {
-        const data = snapshot.data() as Workspace;
-        setCurrentWorkspaceCollaborators(data.collaborators);
-        setCollabEmailsMap(data.collaboratorEmails || {});
-      }
-    });
-
-    // 2. Listen for workspaces where user is a collaborator
-    const unsubShared = onSnapshot(query(collection(db, 'workspaces')), (snapshot) => {
-      const shared: { id: string; email: string }[] = [];
-      snapshot.docs.forEach(d => {
-        const data = d.data() as Workspace;
-        if (data.collaborators.includes(user.uid)) {
-          shared.push({ id: data.ownerId, email: data.ownerEmail });
-        }
-      });
-      setAvailableWorkspaces([{ id: user.uid, email: user.email || "" }, ...shared]);
-    });
-
-    // 3. Listen for received invitations
-    const unsubInvites = onSnapshot(query(collection(db, 'invitations')), (snapshot) => {
-      const invites: Invitation[] = [];
-      snapshot.docs.forEach(d => {
-        const data = d.data() as Invitation;
-        if (data.email.toLowerCase() === user.email?.toLowerCase() && data.status === 'pending') {
-          invites.push({ ...data, id: d.id });
-        }
-      });
-      setPendingInvitations(invites);
-    });
-
-    return () => {
-      unsubWorkspace();
-      unsubShared();
-      unsubInvites();
-    };
-  }, [user]);
 
   const handleLogin = async () => {
     setAuthError(null);
@@ -334,18 +258,24 @@ export default function App() {
   const [manualSales, setManualSales] = useState<ManualSale[]>([]);
 
   useEffect(() => {
-    if (!authReady || !activeWorkspace) return;
+    if (!authReady) return;
 
-    const q = query(collection(db, `users/${activeWorkspace.id}/sales`), orderBy('timestamp', 'desc'));
+    if (!user) {
+      const saved = localStorage.getItem('crm_manual_sales');
+      setManualSales(saved ? JSON.parse(saved) : []);
+      return;
+    }
+
+    const q = query(collection(db, `users/${user.uid}/sales`), orderBy('timestamp', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const sales = snapshot.docs.map(doc => doc.data() as ManualSale);
       setManualSales(sales);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${activeWorkspace.id}/sales`);
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/sales`);
     });
 
     return () => unsubscribe();
-  }, [authReady, activeWorkspace]);
+  }, [authReady, user]);
 
   const [showAddSaleModal, setShowAddSaleModal] = useState(false);
   const [saleForm, setSaleForm] = useState({
@@ -367,9 +297,26 @@ export default function App() {
   const [clientTags, setClientTags] = useState<Record<string, 'pendente' | 'vendido' | 'lixo' | null>>({});
 
   useEffect(() => {
-    if (!authReady || !activeWorkspace) return;
+    if (!authReady) return;
 
-    const unsubscribe = onSnapshot(collection(db, `users/${activeWorkspace.id}/tags`), (snapshot) => {
+    if (!user) {
+      const saved = localStorage.getItem('crm_client_tags');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const migrated: Record<string, any> = {};
+        Object.entries(parsed).forEach(([key, val]) => {
+          if (val === 'entrar em contato') migrated[key] = 'pendente';
+          else if (val === 'contato enviado' || val === 'feito') migrated[key] = 'vendido';
+          else migrated[key] = val;
+        });
+        setClientTags(migrated);
+      } else {
+        setClientTags({});
+      }
+      return;
+    }
+
+    const unsubscribe = onSnapshot(collection(db, `users/${user.uid}/tags`), (snapshot) => {
       const tags: Record<string, 'pendente' | 'vendido' | 'lixo' | null> = {};
       snapshot.docs.forEach(doc => {
         const data = doc.data();
@@ -378,19 +325,24 @@ export default function App() {
       });
       setClientTags(tags);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${activeWorkspace.id}/tags`);
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/tags`);
     });
 
     return () => unsubscribe();
-  }, [authReady, activeWorkspace]);
+  }, [authReady, user]);
 
   const toggleTag = async (clientKey: string, tag: 'pendente' | 'vendido' | 'lixo') => {
     const newTag = clientTags[clientKey] === tag ? null : tag;
 
-    if (!user || !activeWorkspace) return;
+    if (!user) {
+      const updatedTags = { ...clientTags, [clientKey]: newTag };
+      setClientTags(updatedTags);
+      localStorage.setItem('crm_client_tags', JSON.stringify(updatedTags));
+      return;
+    }
     
     try {
-      const tagRef = doc(db, `users/${activeWorkspace.id}/tags`, clientKey);
+      const tagRef = doc(db, `users/${user.uid}/tags`, clientKey);
       if (newTag === null) {
         await deleteDoc(tagRef);
       } else {
@@ -401,7 +353,7 @@ export default function App() {
         });
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${activeWorkspace.id}/tags/${clientKey}`);
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/tags/${clientKey}`);
     }
 
     // Sync to Google Sheets if webhook is configured
@@ -445,7 +397,7 @@ export default function App() {
   }, [deferredSearchTerm, statusFilter, tagFilter, filterType]);
 
   const handleAddSale = async () => {
-    if (!selectedClient || !saleForm.value || !activeWorkspace) return;
+    if (!selectedClient || !saleForm.value) return;
 
     const product = MANUAL_PRODUCTS[saleForm.productIndex] as any;
     const value = parseFloat(saleForm.value.replace(',', '.'));
@@ -462,10 +414,24 @@ export default function App() {
       timestamp: new Date(saleForm.date).getTime()
     };
 
+    if (!user) {
+      const updatedSales = [newSale, ...manualSales];
+      setManualSales(updatedSales);
+      localStorage.setItem('crm_manual_sales', JSON.stringify(updatedSales));
+      setShowAddSaleModal(false);
+      setSaleForm({
+        productIndex: 0,
+        value: "",
+        date: format(new Date(), 'yyyy-MM-dd')
+      });
+      toggleTag(newSale.clientKey, 'vendido');
+      return;
+    }
+
     try {
-      await setDoc(doc(db, `users/${activeWorkspace.id}/sales`, saleId), newSale);
+      await setDoc(doc(db, `users/${user.uid}/sales`, saleId), newSale);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${activeWorkspace.id}/sales/${saleId}`);
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/sales/${saleId}`);
     }
 
     setShowAddSaleModal(false);
@@ -500,77 +466,6 @@ export default function App() {
 
     // Also update the tag to 'vendido'
     toggleTag(newSale.clientKey, 'vendido');
-  };
-
-  const handleInvite = async () => {
-    if (!user || !inviteEmail.trim()) return;
-    setIsInviting(true);
-    try {
-      const inviteId = Math.random().toString(36).substr(2, 9);
-      await setDoc(doc(db, 'invitations', inviteId), {
-        email: inviteEmail.trim().toLowerCase(),
-        senderId: user.uid,
-        senderEmail: user.email,
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      });
-      setInviteEmail("");
-      alert("Convite enviado com sucesso!");
-    } catch (error) {
-      console.error("Erro ao enviar convite:", error);
-      alert("Erro ao enviar convite.");
-    } finally {
-      setIsInviting(false);
-    }
-  };
-
-  const handleAcceptInvite = async (invite: Invitation) => {
-    if (!user) return;
-    try {
-      const workspaceRef = doc(db, 'workspaces', invite.senderId);
-      const workspaceSnap = await getDocFromServer(workspaceRef);
-      if (workspaceSnap.exists()) {
-        const data = workspaceSnap.data() as Workspace;
-        const newCollaborators = data.collaborators.includes(user.uid) 
-          ? data.collaborators 
-          : [...data.collaborators, user.uid];
-        
-        await setDoc(workspaceRef, {
-          ...data,
-          collaborators: newCollaborators,
-          collaboratorEmails: {
-            ...(data.collaboratorEmails || {}),
-            [user.uid]: user.email || ""
-          }
-        });
-      }
-      await deleteDoc(doc(db, 'invitations', invite.id!));
-      setActiveWorkspace({ id: invite.senderId, email: invite.senderEmail });
-    } catch (error) {
-      console.error("Erro ao aceitar convite:", error);
-    }
-  };
-
-  const handleRemoveCollaborator = async (collabUid: string) => {
-    if (!user) return;
-    try {
-      const workspaceRef = doc(db, 'workspaces', user.uid);
-      const workspaceSnap = await getDocFromServer(workspaceRef);
-      if (workspaceSnap.exists()) {
-        const data = workspaceSnap.data() as Workspace;
-        const updatedCollabs = data.collaborators.filter(id => id !== collabUid);
-        const updatedEmails = { ...(data.collaboratorEmails || {}) };
-        delete updatedEmails[collabUid];
-        
-        await setDoc(workspaceRef, {
-          ...data,
-          collaborators: updatedCollabs,
-          collaboratorEmails: updatedEmails
-        });
-      }
-    } catch (error) {
-      console.error("Erro ao remover colaborador:", error);
-    }
   };
 
   const handleDeleteSale = async (saleId: string) => {
@@ -997,67 +892,6 @@ export default function App() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (!authReady) {
-    return (
-      <div className="h-screen w-screen bg-modern-bg flex flex-col items-center justify-center gap-6">
-        <div className="w-12 h-12 bg-modern-primary animate-pulse" />
-        <p className="text-xs font-bold uppercase tracking-widest text-modern-secondary animate-pulse">Carregando...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="h-screen w-screen bg-modern-bg flex flex-col lg:flex-row overflow-hidden">
-        <div className="flex-1 bg-modern-text p-20 flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-modern-primary/10 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/3" />
-          
-          <div className="relative z-10">
-            <div className="w-12 h-12 bg-modern-primary flex items-center justify-center text-white mb-10 shadow-2xl">
-              <Package size={24} />
-            </div>
-            <h1 className="text-5xl font-extrabold text-white tracking-tighter max-w-md leading-none mb-6">
-              DOMINUS <span className="text-modern-primary">CRM</span>
-            </h1>
-            <p className="text-slate-400 text-lg max-w-sm font-medium leading-relaxed">
-              Gestão de leads e controle de vendas manuais em tempo real para equipes de alta performance.
-            </p>
-          </div>
-
-          <div className="relative z-10">
-            <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">© 2026 Dominus Group</p>
-          </div>
-        </div>
-
-        <div className="w-full lg:w-[600px] bg-white p-20 flex flex-col justify-center items-center gap-10">
-          <div className="w-full max-w-sm space-y-8">
-            <div className="space-y-2">
-              <h2 className="text-3xl font-extrabold text-modern-text tracking-tight">Bem-vindo</h2>
-              <p className="text-modern-secondary font-medium">Faça login para acessar seu painel.</p>
-            </div>
-
-            <button 
-              onClick={handleLogin}
-              className="w-full h-16 bg-white border-2 border-slate-100 hover:border-modern-primary flex items-center justify-center gap-4 transition-all group shadow-sm"
-            >
-              <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
-              <span className="text-modern-text font-bold text-sm">Entrar com Google</span>
-            </button>
-
-            {authError && (
-              <div className="p-4 bg-rose-50 border border-rose-100 flex items-center gap-3">
-                <X className="text-rose-500 shrink-0" size={16} />
-                <p className="text-[11px] font-bold text-rose-600 uppercase tracking-wider leading-relaxed">
-                  {authError}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-screen overflow-hidden bg-modern-bg font-sans">
       {/* Main Content */}
@@ -1090,51 +924,6 @@ export default function App() {
           
           <div className="flex items-center gap-6">
             <div className="hidden lg:flex gap-6">
-              <div className="relative group">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary text-right">Espaço de Trabalho</p>
-                <div className="flex items-center gap-2 mt-0.5 cursor-pointer" onClick={() => {}}>
-                  <p className="text-sm font-bold text-modern-text truncate max-w-[150px]">
-                    {activeWorkspace?.id === user.uid ? "Meu Espaço" : activeWorkspace?.email}
-                  </p>
-                  <ChevronDown size={14} className="text-modern-secondary" />
-                </div>
-                
-                <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-modern-border shadow-2xl z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all py-2">
-                  <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-modern-secondary border-b border-modern-border mb-1">Alternar Workspace</p>
-                  {availableWorkspaces.map(ws => (
-                    <button
-                      key={ws.id}
-                      onClick={() => setActiveWorkspace(ws)}
-                      className={cn(
-                        "w-full text-left px-4 py-3 text-xs font-bold hover:bg-slate-50 flex items-center justify-between gap-3",
-                        activeWorkspace?.id === ws.id ? "text-modern-primary bg-modern-primary/5" : "text-modern-text"
-                      )}
-                    >
-                      <span className="truncate">{ws.id === user.uid ? "Meu Workspace" : ws.email}</span>
-                      {activeWorkspace?.id === ws.id && <CheckCircle2 size={14} />}
-                    </button>
-                  ))}
-                  {pendingInvitations.length > 0 && (
-                    <div className="px-4 py-3 border-t border-modern-border mt-1">
-                      <p className="text-[10px] font-bold uppercase text-amber-600 mb-2">Convites Pendentes ({pendingInvitations.length})</p>
-                      <div className="space-y-2">
-                        {pendingInvitations.map(invite => (
-                          <div key={invite.id} className="p-3 bg-amber-50 border border-amber-100 space-y-2">
-                            <p className="text-[10px] text-amber-800 font-bold leading-tight">Env: {invite.senderEmail}</p>
-                            <button 
-                              onClick={() => handleAcceptInvite(invite)}
-                              className="w-full py-1.5 bg-amber-600 text-white text-[9px] font-bold uppercase tracking-widest"
-                            >
-                              Aceitar
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <div className="text-right">
                 <p className="text-[9px] font-bold uppercase tracking-wider text-modern-secondary">Minha Comissão</p>
                 <p className="text-sm font-bold text-emerald-600">
@@ -1156,16 +945,6 @@ export default function App() {
             </div>
             <div className="flex items-center gap-2">
               <button 
-                onClick={() => setShowCollabModal(true)}
-                className="w-10 h-10 bg-white border border-modern-border rounded-none flex items-center justify-center text-modern-secondary hover:text-modern-primary transition-all shadow-sm relative"
-                title="Equipe e Colaboradores"
-              >
-                <Users size={18} />
-                {pendingInvitations.length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full border-2 border-white" />
-                )}
-              </button>
-              <button 
                 onClick={() => setView(view === 'crm' ? 'dashboard' : 'crm')}
                 className={cn(
                   "w-10 h-10 border border-modern-border rounded-none flex items-center justify-center transition-all shadow-sm",
@@ -1173,7 +952,7 @@ export default function App() {
                 )}
                 title={view === 'crm' ? "Ver Dashboard" : "Ver CRM"}
               >
-                {view === 'crm' ? <LayoutDashboard size={18} /> : <Database size={18} />}
+                {view === 'crm' ? <LayoutDashboard size={18} /> : <Users size={18} />}
               </button>
               <button 
                 onClick={() => setShowSettings(true)}
@@ -1188,13 +967,6 @@ export default function App() {
                 className="w-10 h-10 bg-white border border-modern-border rounded-none flex items-center justify-center text-modern-secondary hover:text-modern-primary transition-all disabled:opacity-30 shadow-sm"
               >
                 <RefreshCw size={18} strokeWidth={2.5} className={cn(refreshing && "animate-spin")} />
-              </button>
-              <button 
-                onClick={handleLogout}
-                className="w-10 h-10 bg-white border border-modern-border rounded-none flex items-center justify-center text-modern-secondary hover:text-rose-600 transition-all shadow-sm"
-                title="Sair"
-              >
-                <X size={18} />
               </button>
             </div>
           </div>
@@ -1816,104 +1588,7 @@ export default function App() {
     </div>
   </main>
 
-      {/* Collaboration Modal */}
-      <AnimatePresence>
-        {showCollabModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowCollabModal(false)}
-              className="absolute inset-0 bg-modern-text/40 backdrop-blur-md"
-            />
-            
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg bg-white border border-modern-border shadow-2xl p-10 space-y-10"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-extrabold text-modern-text tracking-tight">Equipe e Convites</h2>
-                  <p className="text-modern-secondary text-sm font-medium">Gerencie quem tem acesso ao seu Espaço de Trabalho.</p>
-                </div>
-                <button 
-                  onClick={() => setShowCollabModal(false)}
-                  className="w-10 h-10 flex items-center justify-center hover:bg-slate-50 transition-all text-modern-secondary"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-modern-secondary">Convidar por E-mail</p>
-                  <div className="flex gap-2">
-                    <input 
-                      type="email"
-                      placeholder="exemplo@dominus.site"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      className="flex-1 bg-slate-50 border border-modern-border px-4 py-3 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-modern-primary/5 transition-all"
-                    />
-                    <button 
-                      onClick={handleInvite}
-                      disabled={isInviting || !inviteEmail.trim()}
-                      className="px-6 bg-modern-primary text-white font-bold text-sm hover:bg-modern-primary/90 disabled:opacity-50 transition-all flex items-center gap-2"
-                    >
-                      {isInviting ? <RefreshCw size={16} className="animate-spin" /> : <Plus size={16} />}
-                      <span>Convidar</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-modern-secondary">Colaboradores com Acesso</p>
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
-                    {currentWorkspaceCollaborators.length > 0 ? (
-                      currentWorkspaceCollaborators.map(id => (
-                        <div key={id} className="flex items-center justify-between p-4 border border-modern-border bg-slate-50 shadow-sm">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-modern-primary/10 flex items-center justify-center text-modern-primary font-bold text-[10px]">
-                              {(collabEmailsMap[id] || id).charAt(0).toUpperCase()}
-                            </div>
-                            <p className="text-xs font-bold text-modern-text truncate max-w-[200px]">{collabEmailsMap[id] || id}</p>
-                          </div>
-                          <button 
-                            onClick={() => handleRemoveCollaborator(id)}
-                            className="p-2 text-rose-500 hover:bg-rose-50 transition-all"
-                            title="Remover Acesso"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="py-10 text-center border-2 border-dashed border-slate-100">
-                        <p className="text-xs font-bold text-modern-secondary uppercase tracking-widest">Sem colaboradores no momento</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="p-6 bg-amber-50 border border-amber-100 space-y-2">
-                  <div className="flex items-center gap-2 text-amber-700">
-                    <CheckCircle2 size={16} />
-                    <p className="text-xs font-extrabold uppercase tracking-widest">Dica de Segurança</p>
-                  </div>
-                  <p className="text-xs text-amber-700 leading-relaxed font-medium">
-                    Colaboradores poderão ver e editar as vendas manuais e marcações de tags no seu espaço de trabalho em tempo real.
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* CRM Main Content Rendering logic follows here... */}
+      {/* Detail Panel - Modern Style */}
       <AnimatePresence>
         {currentSelectedClient && (
           <>

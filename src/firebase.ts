@@ -31,8 +31,7 @@ export {
   deleteDoc, 
   onSnapshot, 
   query, 
-  orderBy,
-  getDocFromServer
+  orderBy 
 };
 export type { User };
 

@@ -37,24 +37,9 @@
         "collaborators": { 
           "type": "array",
           "items": { "type": "string" }
-        },
-        "collaboratorEmails": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
         }
       },
       "required": ["ownerId", "ownerEmail", "collaborators"]
-    },
-    "User": {
-      "title": "User Profile",
-      "description": "Public user profile information",
-      "type": "object",
-      "properties": {
-        "uid": { "type": "string" },
-        "email": { "type": "string" },
-        "displayName": { "type": "string" }
-      },
-      "required": ["uid", "email"]
     },
     "Invitation": {
       "title": "Collaborator Invitation",
@@ -71,10 +56,6 @@
     }
   },
   "firestore": {
-    "/users_meta/{userId}": {
-      "schema": "User",
-      "description": "User metadata linked by UID"
-    },
     "/workspaces/{ownerId}": {
       "schema": "Workspace",
       "description": "Workspace access control list"
