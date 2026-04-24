@@ -1033,32 +1033,32 @@ export default function App() {
             />
           </div>
 
-            <div className="relative">
-              <button 
-                onClick={() => setShowFilterMenu(!showFilterMenu)}
-                className="flex items-center gap-3 bg-white border border-modern-border rounded-none px-5 py-3 shadow-sm hover:bg-slate-50 transition-colors text-sm font-bold text-modern-text"
-              >
-                <Filter size={18} className="text-modern-secondary" />
-                <span>Filtros</span>
-                <ChevronDown size={16} className={cn("text-modern-secondary transition-transform", showFilterMenu && "rotate-180")} />
-              </button>
+                      <div className="relative z-[60]">
+                        <button 
+                          onClick={() => setShowFilterMenu(!showFilterMenu)}
+                          className="flex items-center gap-3 bg-white border border-modern-border rounded-none px-5 py-3 shadow-sm hover:bg-slate-50 transition-colors text-sm font-bold text-modern-text"
+                        >
+                          <Filter size={18} className="text-modern-secondary" />
+                          <span>Filtros</span>
+                          <ChevronDown size={16} className={cn("text-modern-secondary transition-transform", showFilterMenu && "rotate-180")} />
+                        </button>
 
-              <AnimatePresence>
-                {showFilterMenu && (
-                  <>
-                    <motion.div 
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      onClick={() => setShowFilterMenu(false)}
-                      className="fixed inset-0 z-10"
-                    />
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-3 w-80 bg-white border border-modern-border rounded-none shadow-2xl z-40 overflow-hidden p-4 space-y-6"
-                    >
+                        <AnimatePresence>
+                          {showFilterMenu && (
+                            <>
+                              <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setShowFilterMenu(false)}
+                                className="fixed inset-0 z-[65]"
+                              />
+                              <motion.div 
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                className="absolute right-0 mt-3 w-80 bg-white border border-modern-border rounded-none shadow-2xl z-[70] overflow-hidden p-4 space-y-6"
+                              >
                       {/* Período */}
                       <div className="space-y-2">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-modern-secondary px-1">Período</p>
@@ -1530,7 +1530,7 @@ export default function App() {
               <h3 className="text-xs font-extrabold uppercase tracking-widest text-modern-text">Histórico de Vendas Manuais</h3>
               
               <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-modern-secondary">{showUtms ? 'Ver UTMs' : 'Ver Comissão'}</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-modern-secondary">{showUtms ? 'Ver Comissões' : 'Ver UTMs'}</span>
                 <button 
                   onClick={() => setShowUtms(!showUtms)}
                   className={cn(
@@ -1551,7 +1551,7 @@ export default function App() {
             {showUtms && (
               <div 
                 ref={topScrollRef}
-                className="overflow-x-auto custom-scrollbar h-2 bg-slate-50 border-b border-modern-border"
+                className="overflow-x-auto custom-scrollbar h-3 bg-slate-50 border-b border-modern-border"
               >
                 <div style={{ height: '1px' }} />
               </div>
